@@ -1419,6 +1419,8 @@ window.addEventListener("scroll", () => (dirty = true), { passive: true });
 // Thumbstick left/right: scrub through the days; up/down: make the model bigger/smaller.
 // =====================================================================================
 let vrLabels = null;
+// Shown on the page and on the VR panel, so you can check which copy the browser loaded.
+const BUILD = "VR build 4 · 15 Nov 2026";
 const VR = { active: false, skyDirty: true, panelDirty: true, ctrls: [], drag: null, wasPlaying: false,
              squeeze: null, hover: [null, null], lastNow: 0 };
 const WORLD_SCALE = 0.055, WORLD_POS = new THREE.Vector3(0, 1.05, -0.85);
@@ -1480,6 +1482,8 @@ function drawPanel() {
   g.fillStyle = "rgba(24,27,35,0.94)"; g.beginPath(); g.roundRect(0, 0, 640, 800, 28); g.fill();
   g.strokeStyle = "#4a5366"; g.lineWidth = 3; g.stroke();
   g.fillStyle = "#c8d2df"; g.font = "600 30px system-ui, sans-serif"; g.fillText("Phases of the Moon", 30, 52);
+  g.fillStyle = "#7f8a99"; g.font = "20px system-ui, sans-serif"; g.textAlign = "right";
+  g.fillText(BUILD.replace("VR build", "build"), 610, 50); g.textAlign = "left";
   g.fillStyle = "#ffd400"; g.font = "700 48px system-ui, sans-serif"; g.fillText(PHASES[phaseIndex(d)][0], 30, 118);
   g.fillStyle = "#e8edf3"; g.font = "28px system-ui, sans-serif";
   const trend = d > 0.3 && d < SYNODIC / 2 - 0.3 ? " · waxing" : d > SYNODIC / 2 + 0.3 && d < SYNODIC - 0.3 ? " · waning" : "";
@@ -1687,6 +1691,7 @@ vrBtn.onclick = async () => {
   } catch (e) { vrNote.textContent = "Couldn't start VR: " + e.message; }
 };
 setupVR();
+document.querySelector(".credits").append(document.createElement("br"), BUILD);
 
 buildScale(false);
 setDay(0);
