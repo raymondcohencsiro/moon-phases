@@ -115,8 +115,12 @@
   .opt.disabled { opacity: .45; cursor: default; }
   .sub { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
   .wide { width: 100%; margin-top: 10px; }
-  #vrBtn { background: #7a3fb0; font-weight: 600; padding: 9px; }
+  /* Enter VR: a headset icon in the top-right corner of the left panel */
+  #vrBtn { margin-left: auto; width: 36px; height: 30px; padding: 0; display: inline-flex; align-items: center;
+           justify-content: center; background: #7a3fb0; border-radius: 7px; }
+  #vrBtn[hidden] { display: none; }
   #vrBtn:hover { background: #8d50c4; }
+  #vrBtn svg { width: 22px; height: 22px; fill: none; stroke: #fff; stroke-width: 1.7; stroke-linejoin: round; }
   #scaleNote, .credits { color: var(--muted); font-size: 12.5px; font-style: italic; margin-top: 12px; }
   .credits { font-style: normal; font-size: 11.5px; }
   kbd { font: 11px ui-monospace, monospace; background: #2c313d; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
@@ -169,7 +173,10 @@
 <body>
 <main>
   <aside id="controls" aria-label="Controls">
-    <div class="brand"><img id="brandIcon" alt=""><h1>Phases of the Moon</h1></div>
+    <div class="brand"><img id="brandIcon" alt=""><h1>Phases of the Moon</h1>
+      <button id="vrBtn" hidden title="Enter VR (headset)" aria-label="Enter VR">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 8.5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-4.2l-2-2.6h-2.6l-2 2.6H4.5a2 2 0 0 1-2-2z"/><circle cx="7.6" cy="12" r="1.7"/><circle cx="16.4" cy="12" r="1.7"/></svg>
+      </button></div>
 
     <h2 class="sec">Jump to a phase</h2>
     <div class="jump" id="jump"></div>
@@ -209,9 +216,6 @@
       <button id="resetBtn" title="Shortcut: T or Esc">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span class="lbl">Reset view</span></button>
     </div>
-    <button class="wide" id="vrBtn" hidden title="Needs a VR headset browser, such as the Meta Quest Browser">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-4px"><path d="M3 8h18v8h-6l-2-3h-2l-2 3H3z"/><circle cx="7.5" cy="12" r="1.5"/><circle cx="16.5" cy="12" r="1.5"/></svg>
-      Enter VR</button>
     <p class="hint" id="vrNote"></p>
     <p class="hint">Drag the orbit view to rotate it, scroll or pinch to zoom. <b>Drag the Moon</b> to move it around its orbit. <b>Double-click</b> the Sun, Earth or Moon to centre on it.</p>
 
@@ -1425,7 +1429,7 @@ window.addEventListener("scroll", () => (dirty = true), { passive: true });
 // =====================================================================================
 let vrLabels = null;
 // Shown on the page and on the VR panel, so you can check which copy the browser loaded.
-const BUILD = "VR build 5 · 15 Nov 2026";
+const BUILD = "VR build 6 · 15 Nov 2026";
 const VR = { active: false, skyDirty: true, panelDirty: true, ctrls: [], drag: null, wasPlaying: false,
              squeeze: null, hover: [null, null], lastNow: 0 };
 const WORLD_SCALE = 0.055, WORLD_POS = new THREE.Vector3(0, 1.05, -0.85);
@@ -1626,7 +1630,7 @@ const QUALITY = [
   { name: "Medium", milkyWay: false, stars: 11000, sunDetail: true,  screenMs: 80 },
   { name: "Low",    milkyWay: false, stars: 4000,  sunDetail: false, screenMs: 250 },
 ];
-VR.quality = 1;                                   // start on Medium in a headset
+VR.quality = 2;                                   // start on Low in a headset (steadiest on a Quest 2)
 VR.stats = { fps: 0, missed: 0, cpu: 0 };
 VR.error = "";
 function applyQuality(q) {
@@ -1746,7 +1750,7 @@ async function setupVR() {
   try { ok = !!navigator.xr && await navigator.xr.isSessionSupported("immersive-vr"); } catch (e) { ok = false; }
   vrBtn.hidden = !ok;
   vrNote.textContent = ok ? "" : (window.isSecureContext
-    ? "VR: open this page in a headset browser (e.g. Meta Quest Browser) to see an Enter VR button."
+    ? "VR: open this page in a headset browser (e.g. Meta Quest Browser) and a headset icon appears at the top of this panel."
     : "VR needs the page to be served over https://.");
 }
 vrBtn.onclick = async () => {
