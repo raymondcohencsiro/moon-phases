@@ -429,7 +429,10 @@ document.getElementById("brandIcon").src = drawIcon(96);
 const canvas = document.getElementById("gl");
 let renderer;
 try {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
+  // No "logarithmic depth" here (it costs every pixel extra work, too much for a headset's
+  // graphics chip). Real scale's huge range of distances is handled by setting the orbit
+  // camera's near/far limits to suit each view instead (see renderView).
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 } catch (e) {
   document.getElementById("glError").style.display = "block";
   throw e;
@@ -1103,6 +1106,14 @@ function renderView(el, cam, clear) {
   renderer.setClearColor(clear);
   cam.aspect = r.width / r.height; cam.updateProjectionMatrix();
   lineMaterials.forEach(m => m.resolution.set(r.width, r.height));
+  if (cam === orbitCam) {
+    // near/far limits that fit this view: close enough for the Earth's surface detail,
+    // far enough to include the Sun (23,000 Earth radii away at real scale)
+    const dist = orbitCam.position.distanceTo(controls.target);
+    orbitCam.near = Math.max(0.002, dist * 0.003);
+    orbitCam.far = dist * 4 + (S.real ? Math.abs(S.sunC[0]) + 4 * S.sunR : 80);
+    orbitCam.updateProjectionMatrix();
+  }
   placeSkyDome(cam, 1.45);
   faceSunGlow(cam);
   renderer.render(scene, cam);
@@ -1642,6 +1653,12 @@ renderer.xr.addEventListener("sessionstart", () => {
   setLayers(vrGroup, ORBIT);
   VR.skyDirty = VR.panelDirty = true;
   refresh();
+  // Prepare every shader and texture now, so nothing has to be compiled or uploaded the
+  // first time it comes into view (that causes a visible hitch in a headset).
+  drawPanel();
+  [earthMat.map, moon.material.map, panelTex, capTex, skyRT.texture].forEach(t => t && renderer.initTexture(t));
+  renderer.compile(scene, orbitCam);
+  renderer.compile(scene, skyCam);
 });
 renderer.xr.addEventListener("sessionend", () => {
   VR.active = false; VR.drag = VR.squeeze = null;
