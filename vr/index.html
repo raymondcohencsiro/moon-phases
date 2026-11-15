@@ -439,6 +439,8 @@ renderer.setScissorTest(true);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.xr.enabled = true;                       // VR mode (WebXR); off until a session starts
 renderer.xr.setReferenceSpaceType("local-floor");
+renderer.xr.setFramebufferScaleFactor(0.85);       // ~28% fewer pixels per eye: steadier frame rate on Quest 2
+renderer.xr.setFoveation(1);                       // full fixed foveation: fewer pixels at the edges of the view
 
 // The view from Earth / the Moon has its own small canvas in the right-hand panel.
 const skyCanvas = document.getElementById("skyGl");
@@ -664,10 +666,12 @@ const sunGroup = new THREE.Group();
     .forEach(([s, c]) => grad.addColorStop(s, c));
   g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
   const glowTex = new THREE.CanvasTexture(cv); glowTex.colorSpace = THREE.SRGBColorSpace;
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending,
-                                                         depthWrite: false, transparent: true }));
-  glow.scale.set(3.5, 3.5, 1);
+  // A flat card turned to face the viewer's EYE (see faceSunGlow), so the halo stays centred
+  // on the Sun even near the edge of a wide (headset) view.
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 3.5), new THREE.MeshBasicMaterial({
+    map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
   sunGroup.add(glow);
+  sunGroup.userData.glow = glow;
 }
 world.add(sunGroup);
 setLayers(sunGroup, ORBIT);   // never drawn in the view from Earth (it'd fake an eclipse)
@@ -680,19 +684,23 @@ const GAL_N = new THREE.Vector3(0.30, -0.92, 0.26).normalize();   // Milky Way p
 const GAL_C = new THREE.Vector3(-0.2, 0.0, -1.0).projectOnPlane(GAL_N).normalize();  // galactic centre (below the view)
 {
   // Milky Way: a faint, patchy band of light with dark dust lanes, brightest towards the centre
-  const mw = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), new THREE.ShaderMaterial({
+  // The Milky Way is worked out ONCE, at start-up, into an all-sky image (2048 x 1024), which
+  // is then simply displayed. Computing it afresh for every pixel of every frame was too
+  // slow for a headset's graphics chip.
+  const bake = new THREE.ShaderMaterial({
     uniforms: { gN: { value: GAL_N }, gC: { value: GAL_C } },
-    vertexShader: `varying vec3 vDir; void main() { vDir = position;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: `
-      uniform vec3 gN; uniform vec3 gC; varying vec3 vDir;
+      uniform vec3 gN; uniform vec3 gC; varying vec2 vUv;
       float h(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
       float noise(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y),
                    mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z); }
       float fbm(vec3 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
       void main() {
-        vec3 d = normalize(vDir);
+        // the direction this pixel of the all-sky image stands for (same layout as a three.js sphere)
+        float phi = vUv.x * 6.28318530718, theta = (1.0 - vUv.y) * 3.14159265359;
+        vec3 d = vec3(-cos(phi) * sin(theta), cos(theta), sin(phi) * sin(theta));
         float lat = asin(clamp(dot(d, gN), -1.0, 1.0));
         float toCentre = acos(clamp(dot(normalize(d - gN * dot(d, gN)), gC), -1.0, 1.0));
         float core = 0.45 + 1.1 * exp(-toCentre * toCentre / 0.55);
@@ -704,6 +712,21 @@ const GAL_C = new THREE.Vector3(-0.2, 0.0, -1.0).projectOnPlane(GAL_N).normalize
         vec3 col = mix(vec3(0.62, 0.70, 0.95), vec3(1.0, 0.90, 0.78), exp(-toCentre * toCentre / 0.5));
         gl_FragColor = vec4(col * glow * 0.15, 1.0);
       }`,
+    depthTest: false, depthWrite: false,
+  });
+  const mwRT = new THREE.WebGLRenderTarget(2048, 1024, { depthBuffer: false });
+  mwRT.texture.colorSpace = THREE.SRGBColorSpace;     // stored as-is, displayed as-is
+  {
+    const bakeScene = new THREE.Scene(), bakeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    bakeScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bake));
+    const scissor = renderer.getScissorTest();
+    renderer.setScissorTest(false);
+    renderer.setRenderTarget(mwRT); renderer.render(bakeScene, bakeCam); renderer.setRenderTarget(null);
+    renderer.setScissorTest(scissor);
+    bake.dispose();
+  }
+  const mw = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), new THREE.MeshBasicMaterial({
+    map: mwRT.texture,
     // Drawn in the solid pass (transparent: false) and first (renderOrder), never writing depth, so
     // everything else - including the dark side of the Moon - is drawn over it.
     side: THREE.BackSide, depthTest: false, depthWrite: false, transparent: false, blending: THREE.AdditiveBlending,
@@ -1049,6 +1072,11 @@ function refreshInner() { updateScene(); updatePanel(); if (typeof jumpButtons !
 // Rendering: one canvas, two viewports
 // =====================================================================================
 const tmp = new THREE.Vector3();
+const eyePos = new THREE.Vector3();
+function faceSunGlow(cam) {
+  cam.updateMatrixWorld();
+  sunGroup.userData.glow.lookAt(eyePos.setFromMatrixPosition(cam.matrixWorld));
+}
 function placeSkyDome(cam, gain) {
   // keep the starry backdrop centred on this camera, inside its near/far range
   skyDome.position.copy(cam.position);
@@ -1076,6 +1104,7 @@ function renderView(el, cam, clear) {
   cam.aspect = r.width / r.height; cam.updateProjectionMatrix();
   lineMaterials.forEach(m => m.resolution.set(r.width, r.height));
   placeSkyDome(cam, 1.45);
+  faceSunGlow(cam);
   renderer.render(scene, cam);
   return r;
 }
@@ -1593,6 +1622,7 @@ function vrFrame(now) {
   skyDome.position.setFromMatrixPosition(xrCam.matrixWorld);
   skyDome.scale.setScalar(40);
   skyDome.userData.stars.material.uniforms.gain.value = 1.45;
+  faceSunGlow(xrCam);
   renderer.setClearColor(0x04050a);
   renderer.render(scene, orbitCam);
 }
