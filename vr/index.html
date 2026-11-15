@@ -487,9 +487,21 @@ function fatLine(points, color, width, opacity = 1, closed = false) {
   return new Line2(geo, mat);
 }
 function setLinePoints(line, points, closed = false) {
-  const flat = points.flatMap(p => [p.x, p.y, p.z]);
-  if (closed) flat.push(flat[0], flat[1], flat[2]);
-  line.geometry.setPositions(flat);
+  const pts = closed ? [...points, points[0]] : points;
+  const attr = line.geometry.attributes.instanceStart;
+  const nSeg = pts.length - 1;
+  if (attr && attr.data.array.length === nSeg * 6) {
+    // Same number of segments: overwrite the existing buffer (no new GPU allocations)
+    const a = attr.data.array;
+    for (let i = 0; i < nSeg; i++) {
+      const p = pts[i], q = pts[i + 1], k = i * 6;
+      a[k] = p.x; a[k + 1] = p.y; a[k + 2] = p.z; a[k + 3] = q.x; a[k + 4] = q.y; a[k + 5] = q.z;
+    }
+    attr.data.needsUpdate = true;
+    line.geometry.computeBoundingSphere();
+    return;
+  }
+  line.geometry.setPositions(pts.flatMap(p => [p.x, p.y, p.z]));
 }
 function circle(centre, u, v, radius, n = 120) {
   const pts = [];
@@ -1017,6 +1029,20 @@ function updatePanel() {
 }
 
 function refresh() { VR.skyDirty = true; VR.panelDirty = true; refreshInner(); }
+// During VR playback: move things every frame, but let the floating screen, the panel
+// text and the (hidden) page panels catch up only a few times a second.
+let lastPageUpdate = 0;
+function refreshLight() {
+  updateScene();
+  VR.skyDirty = true;                         // throttled in vrFrame()
+  const t = performance.now();
+  if (t - lastPageUpdate > 250) {             // 4x a second is plenty for text
+    lastPageUpdate = t;
+    VR.panelDirty = true;
+    updatePanel(); updateJumpButtons();
+    slider.value = Math.round(state.day * 100);
+  }
+}
 function refreshInner() { updateScene(); updatePanel(); if (typeof jumpButtons !== "undefined") updateJumpButtons(); dirty = true; }
 
 // =====================================================================================
@@ -1075,8 +1101,9 @@ function renderAll() {
 const slider = document.getElementById("slider"), fpsBox = document.getElementById("fpsBox"),
       speedBox = document.getElementById("speedBox"), playBtn = document.getElementById("playBtn"),
       loopBtn = document.getElementById("loopBtn"), zoomBtn = document.getElementById("zoomBtn");
-function setDay(d, wrap = true) {
+function setDay(d, wrap = true, light = false) {
   state.day = wrap ? ((d % SYNODIC) + SYNODIC) % SYNODIC : Math.min(SYNODIC, Math.max(0, d));
+  if (light) { refreshLight(); return; }
   slider.value = Math.round(state.day * 100);
   refresh();
 }
@@ -1091,7 +1118,15 @@ function step(n) { setPlaying(false); setDay(Math.round(state.day) + n); }
 
 let lastStep = performance.now(), zoomAnim = null, lastLayout = "";
 function loop(now) {
-  if (state.playing) {
+  if (state.playing && renderer.xr.isPresenting) {
+    // In VR the Moon moves a little on EVERY headset frame (72-90 a second), timed by the
+    // real elapsed time; stepping at the FPS setting looks jerky inside a headset.
+    const dt = Math.min(0.1, Math.max(0, (now - lastStep) / 1000));
+    lastStep = now;
+    const next = state.day + dt * Math.max(0.1, +speedBox.value || 2);
+    if (next >= SYNODIC && !state.loop) { setDay(SYNODIC, false); setPlaying(false); }
+    else setDay(next, true, true);
+  } else if (state.playing) {
     const fps = Math.min(60, Math.max(1, +fpsBox.value || 30)), interval = 1000 / fps;
     if (now - lastStep >= interval) {
       const n = Math.min(5, Math.floor((now - lastStep) / interval));
@@ -1432,7 +1467,7 @@ function drawPanel() {
 }
 
 // ---- The floating screen: the Moon (or Earth) as seen by the observer ------------------
-const skyRT = new THREE.WebGLRenderTarget(768, 768, { samples: 4 });
+const skyRT = new THREE.WebGLRenderTarget(640, 640, { samples: 2 });   // modest size: it's drawn often
 skyRT.texture.colorSpace = THREE.SRGBColorSpace;
 const skyScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.42), new THREE.MeshBasicMaterial({ map: skyRT.texture }));
 skyScreen.position.set(0.66, 1.28, -0.58); skyScreen.rotation.y = -0.75;
@@ -1551,7 +1586,8 @@ function vrFrame(now) {
   }
   world.updateMatrixWorld(true);
   if (VR.panelDirty) drawPanel();
-  if (VR.skyDirty) renderSkyToScreen();
+  // The floating screen is a second full render: at most ~36 times a second
+  if (VR.skyDirty && now - (VR.lastSky || 0) > 27) { VR.lastSky = now; renderSkyToScreen(); }
   // stars around the headset
   const xrCam = renderer.xr.getCamera();
   skyDome.position.setFromMatrixPosition(xrCam.matrixWorld);
