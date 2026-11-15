@@ -442,7 +442,7 @@ renderer.setScissorTest(true);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.xr.enabled = true;                       // VR mode (WebXR); off until a session starts
 renderer.xr.setReferenceSpaceType("local-floor");
-renderer.xr.setFramebufferScaleFactor(0.85);       // ~28% fewer pixels per eye: steadier frame rate on Quest 2
+renderer.xr.setFramebufferScaleFactor(0.8);        // ~36% fewer pixels per eye: steadier frame rate on Quest 2
 renderer.xr.setFoveation(1);                       // full fixed foveation: fewer pixels at the edges of the view
 
 // The view from Earth / the Moon has its own small canvas in the right-hand panel.
@@ -660,7 +660,11 @@ const sunGroup = new THREE.Group();
         gl_FragColor = vec4(ramp(b), 1.0);
       }`,
   });
-  sunGroup.add(new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), mat));
+  const sunBall = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), mat);
+  sunGroup.add(sunBall);
+  sunGroup.userData.ball = sunBall;
+  sunGroup.userData.detailed = mat;
+  sunGroup.userData.plain = new THREE.MeshBasicMaterial({ color: 0xffc23a });
   // Glow: a camera-facing sprite. Its middle is hidden behind the Sun, so only the halo shows.
   const cv = document.createElement("canvas"); cv.width = cv.height = 256;
   const g = cv.getContext("2d"), grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
@@ -780,6 +784,7 @@ const GAL_C = new THREE.Vector3(-0.2, 0.0, -1.0).projectOnPlane(GAL_N).normalize
   pts.renderOrder = -10;
   skyDome.add(mw, pts);
   skyDome.userData.stars = pts;
+  skyDome.userData.mw = mw;
   skyDome.traverse(o => (o.frustumCulled = false));
 }
 scene.add(skyDome);
@@ -1420,7 +1425,7 @@ window.addEventListener("scroll", () => (dirty = true), { passive: true });
 // =====================================================================================
 let vrLabels = null;
 // Shown on the page and on the VR panel, so you can check which copy the browser loaded.
-const BUILD = "VR build 4 · 15 Nov 2026";
+const BUILD = "VR build 5 · 15 Nov 2026";
 const VR = { active: false, skyDirty: true, panelDirty: true, ctrls: [], drag: null, wasPlaying: false,
              squeeze: null, hover: [null, null], lastNow: 0 };
 const WORLD_SCALE = 0.055, WORLD_POS = new THREE.Vector3(0, 1.05, -0.85);
@@ -1445,9 +1450,9 @@ function textSprite(text, pos, height) {
 }
 
 // ---- The floating control panel (drawn on a canvas, shown on a flat board) --------------
-const panelCv = document.createElement("canvas"); panelCv.width = 640; panelCv.height = 800;
+const panelCv = document.createElement("canvas"); panelCv.width = 640; panelCv.height = 880;
 const panelTex = new THREE.CanvasTexture(panelCv); panelTex.colorSpace = THREE.SRGBColorSpace;
-const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.50),
+const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.55),
                              new THREE.MeshBasicMaterial({ map: panelTex, transparent: true }));
 // low on the left, tilted back like a lectern, so it doesn't cover the Sun
 panel.position.set(-0.46, 0.86, -0.40); panel.rotation.set(-0.55, 0.6, 0, "YXZ");
@@ -1463,7 +1468,8 @@ const vrButtons = [
   { id: "south", x: 325, y: 500, w: 285, h: 64, label: "Southern", active: () => state.southern },
   { id: "spin", x: 30, y: 580, w: 285, h: 64, label: () => "Spin Earth: " + (state.spin ? "on" : "off"), active: () => state.spin },
   { id: "ring", x: 325, y: 580, w: 285, h: 64, label: () => "Facing half: " + (state.ring ? "on" : "off"), active: () => state.ring },
-  { id: "exit", x: 30, y: 700, w: 580, h: 70, label: "Exit VR" },
+  { id: "quality", x: 30, y: 662, w: 270, h: 64, label: () => "Quality: " + QUALITY[VR.quality].name },
+  { id: "exit", x: 30, y: 744, w: 580, h: 64, label: "Exit VR" },
 ];
 function vrPress(id) {
   if (id === "back") step(-1);
@@ -1474,12 +1480,13 @@ function vrPress(id) {
   else if (id === "spin") spinBox.click();
   else if (id === "ring") ringBox.click();
   else if (id === "exit") renderer.xr.getSession()?.end();
+  else if (id === "quality") applyQuality((VR.quality + 1) % QUALITY.length);
   VR.panelDirty = true;
 }
 function drawPanel() {
   const g = panelCv.getContext("2d"), d = state.day, frac = litFraction(d);
-  g.clearRect(0, 0, 640, 800);
-  g.fillStyle = "rgba(24,27,35,0.94)"; g.beginPath(); g.roundRect(0, 0, 640, 800, 28); g.fill();
+  g.clearRect(0, 0, 640, 880);
+  g.fillStyle = "rgba(24,27,35,0.94)"; g.beginPath(); g.roundRect(0, 0, 640, 880, 28); g.fill();
   g.strokeStyle = "#4a5366"; g.lineWidth = 3; g.stroke();
   g.fillStyle = "#c8d2df"; g.font = "600 30px system-ui, sans-serif"; g.fillText("Phases of the Moon", 30, 52);
   g.fillStyle = "#7f8a99"; g.font = "20px system-ui, sans-serif"; g.textAlign = "right";
@@ -1504,8 +1511,16 @@ function drawPanel() {
     g.textAlign = "left"; g.textBaseline = "alphabetic";
   }
   g.fillStyle = "#9aa6b5"; g.font = "21px system-ui, sans-serif";
-  g.fillText("Trigger: grab the Moon  ·  Grip: move the model", 30, 672);
-  g.fillText("Stick ←→: days  ·  ↑↓: bigger / smaller", 30, 694 + 96);
+  // live performance readout, to find what makes the headset miss frames
+  const st = VR.stats;
+  g.fillStyle = st.missed > 2 ? "#ff8a7a" : "#9ad0ff"; g.font = "600 22px system-ui, sans-serif";
+  g.fillText(`${st.fps.toFixed(0)} fps · ${st.missed} missed / s`, 318, 688);
+  g.fillStyle = "#9aa6b5"; g.font = "20px system-ui, sans-serif";
+  g.fillText(`code ${st.cpu.toFixed(1)} ms/frame`, 318, 716);
+  if (VR.error) { g.fillStyle = "#ff8a7a"; g.fillText(("Error: " + VR.error).slice(0, 52), 30, 836); }
+  g.fillStyle = "#9aa6b5"; g.font = "21px system-ui, sans-serif";
+  g.fillText("Trigger: grab the Moon  ·  Grip: move the model", 30, VR.error ? 864 : 840);
+  if (!VR.error) g.fillText("Stick ←→: days  ·  ↑↓: bigger / smaller", 30, 866);
   panelTex.needsUpdate = true;
   VR.panelDirty = false;
 }
@@ -1605,7 +1620,50 @@ function dragMoon(c) {
   setDay(((a - Math.PI) / (2 * Math.PI) * SYNODIC % SYNODIC + SYNODIC) % SYNODIC);
 }
 
+// Quality levels, to trade looks for a steady frame rate on slower headsets (Quest 2)
+const QUALITY = [
+  { name: "High",   milkyWay: true,  stars: 22000, sunDetail: true,  screenMs: 27 },
+  { name: "Medium", milkyWay: false, stars: 11000, sunDetail: true,  screenMs: 80 },
+  { name: "Low",    milkyWay: false, stars: 4000,  sunDetail: false, screenMs: 250 },
+];
+VR.quality = 1;                                   // start on Medium in a headset
+VR.stats = { fps: 0, missed: 0, cpu: 0 };
+VR.error = "";
+function applyQuality(q) {
+  VR.quality = q;
+  const Q = QUALITY[q];
+  if (!VR.active) return;
+  skyDome.userData.mw.visible = Q.milkyWay;
+  skyDome.userData.stars.geometry.setDrawRange(0, Q.stars);
+  sunGroup.userData.ball.material = Q.sunDetail ? sunGroup.userData.detailed : sunGroup.userData.plain;
+  VR.panelDirty = true;
+}
+function restoreQuality() {             // back to full detail on the flat page
+  skyDome.userData.mw.visible = true;
+  skyDome.userData.stars.geometry.setDrawRange(0, Infinity);
+  sunGroup.userData.ball.material = sunGroup.userData.detailed;
+}
+const perf = { frames: 0, missed: 0, cpu: 0, t0: 0, last: 0 };
 function vrFrame(now) {
+  const t0 = performance.now();
+  // frame timing: a gap of more than 1.5 frames means the headset showed an old frame
+  if (perf.last) {
+    const gap = now - perf.last, target = 1000 / (renderer.xr.getSession()?.frameRate || 72);
+    if (gap > target * 1.5) perf.missed += Math.round(gap / target) - 1;
+  }
+  perf.last = now; perf.frames++;
+  if (!perf.t0) perf.t0 = now;
+  if (now - perf.t0 >= 1000) {
+    const secs = (now - perf.t0) / 1000;
+    VR.stats = { fps: perf.frames / secs, missed: Math.round(perf.missed / secs), cpu: perf.cpu / perf.frames };
+    perf.frames = 0; perf.missed = 0; perf.cpu = 0; perf.t0 = now;
+    VR.panelDirty = true;
+  }
+  try { vrFrameInner(now); }
+  catch (e) { VR.error = e.message || String(e); VR.panelDirty = true; console.error(e); }
+  perf.cpu += performance.now() - t0;
+}
+function vrFrameInner(now) {
   const dt = Math.min(0.1, Math.max(0, (now - (VR.lastNow || now)) / 1000)); VR.lastNow = now;
   // controllers: hover, rays, dragging, moving the model, thumbsticks
   const hov = [null, null];
@@ -1628,10 +1686,10 @@ function vrFrame(now) {
     const now3 = VR.squeeze.c.getWorldPosition(new THREE.Vector3());
     world.position.copy(VR.squeeze.start).add(now3.sub(VR.squeeze.from));
   }
-  world.updateMatrixWorld(true);
+  if (VR.squeeze || VR.drag) world.updateMatrixWorld(true);
   if (VR.panelDirty) drawPanel();
   // The floating screen is a second full render: at most ~36 times a second
-  if (VR.skyDirty && now - (VR.lastSky || 0) > 27) { VR.lastSky = now; renderSkyToScreen(); }
+  if (VR.skyDirty && now - (VR.lastSky || 0) > QUALITY[VR.quality].screenMs) { VR.lastSky = now; renderSkyToScreen(); }
   // stars around the headset
   const xrCam = renderer.xr.getCamera();
   skyDome.position.setFromMatrixPosition(xrCam.matrixWorld);
@@ -1656,6 +1714,8 @@ renderer.xr.addEventListener("sessionstart", () => {
   if (vrLabels) vrLabels.visible = true;
   setLayers(vrGroup, ORBIT);
   VR.skyDirty = VR.panelDirty = true;
+  applyQuality(VR.quality);
+  perf.last = 0; perf.t0 = 0; VR.error = "";
   refresh();
   // Prepare every shader and texture now, so nothing has to be compiled or uploaded the
   // first time it comes into view (that causes a visible hitch in a headset).
@@ -1663,9 +1723,14 @@ renderer.xr.addEventListener("sessionstart", () => {
   [earthMat.map, moon.material.map, panelTex, capTex, skyRT.texture].forEach(t => t && renderer.initTexture(t));
   renderer.compile(scene, orbitCam);
   renderer.compile(scene, skyCam);
+  const ball = sunGroup.userData.ball, used = ball.material;          // also prepare the other Sun look
+  ball.material = used === sunGroup.userData.plain ? sunGroup.userData.detailed : sunGroup.userData.plain;
+  renderer.compile(scene, orbitCam);
+  ball.material = used;
 });
 renderer.xr.addEventListener("sessionend", () => {
   VR.active = false; VR.drag = VR.squeeze = null;
+  restoreQuality();
   world.position.set(0, 0, 0); world.rotation.set(0, 0, 0); world.scale.set(1, 1, 1); world.updateMatrixWorld(true);
   vrGroup.visible = false;
   if (vrLabels) vrLabels.visible = false;
