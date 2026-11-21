@@ -1,0 +1,2300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phases of the Moon: interactive simulator</title>
+<meta name="description" content="An interactive 3D simulator of the phases of the Moon, with a VR mode for headsets.">
+<link rel="icon" id="favicon" href="data:,">
+<!--HEAD_EXTRA-->
+<style>
+  :root {
+    --bg: #1b1d24; --sky: #05060a; --panel: #20232c; --line: #3a4150;
+    --blue: #2f5b8a; --blue-hi: #3b6fa6; --yellow: #ffd400; --text: #e8edf3; --muted: #9aa6b5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: grid; grid-template-rows: 1fr auto; height: 100vh; height: 100dvh; overflow: hidden; }
+  main { display: grid; grid-template-columns: 300px minmax(0, 1fr) 320px; min-height: 0; }
+  #stage { position: relative; min-height: 0; }
+  #orbitView { position: absolute; inset: 0; }
+  /* Dragging in the 3D views rotates or moves things; it must never select label text */
+  #stage, #skyView, footer, .jump, .seg, .toggle, .btnrow {
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  /* the view from Earth / the Moon: a square at the top of the right-hand panel */
+  #skyView { position: relative; width: 100%; aspect-ratio: 1 / 1; margin: 0 0 10px;
+             border: 1px solid #4a5366; border-radius: 8px; overflow: hidden; background: #04050a; }
+  #skyGl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #skyView .caption.top { font-size: 13px; top: 6px; }
+
+  #skyView .caption.bottom { font-size: 11.5px; bottom: 6px; }
+  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; z-index: 0; }
+  .view { position: relative; overflow: hidden; min-height: 0; touch-action: none; z-index: 1; }
+  #orbitView { cursor: grab; }
+  #orbitView:active { cursor: grabbing; }
+  .caption { position: absolute; left: 0; right: 0; text-align: center; pointer-events: none; z-index: 2;
+    padding: 0 8px; text-shadow: 0 1px 3px #000; }
+  .caption.top { top: 8px; font-size: 15px; color: #c8d2df; }
+  .caption.bottom { bottom: 10px; color: var(--yellow); font-size: 13px; }
+  .caption.corner { left: 10px; right: auto; text-align: left; bottom: 8px; color: var(--yellow);
+    font-size: 12px; max-width: 95%; }
+  .labels { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+  .label { position: absolute; white-space: nowrap; font-size: 12.5px; font-weight: 600; transform: translate(-50%, -50%); }
+  .label.tag { background: var(--blue); color: #fff; padding: 2px 6px; border-radius: 4px; opacity: .95; }
+  .label.plain { color: #fff; text-shadow: 0 1px 2px #000; }
+  .label.blue { color: #9ad0ff; text-shadow: 0 1px 2px #000; }
+  .label.right { transform: translate(calc(-100% - 14px), -50%); }
+  .label.left { transform: translate(-12px, -50%); }
+
+  /* side panel */
+  aside { background: var(--panel); overflow-y: auto; padding: 12px 14px 16px; z-index: 3; min-height: 0; }
+  #controls { border-right: 1px solid var(--line); }
+  #infoPanel { border-left: 1px solid var(--line); }
+  #controls fieldset:first-of-type { margin-top: 6px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .brand img { width: 34px; height: 34px; }
+  .brand h1 { font-size: 15px; margin: 0; font-weight: 600; color: #c8d2df; }
+  #phaseName { color: var(--yellow); font-size: 22px; font-weight: 700; margin: 6px 0 4px; }
+  #info { font-size: 13.5px; }
+  #info p { margin: 6px 0; }
+  #info .muted { color: var(--muted); }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 12px 0 0; padding: 8px 10px 10px; }
+  legend { font-weight: 700; padding: 0 4px; }
+  /* controls panel */
+  h2.sec { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+           margin: 16px 2px 7px; }
+  .ico { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8;
+         stroke-linecap: round; stroke-linejoin: round; }
+  .jump { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+  .jump button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 7px 2px 6px; background: #262a33; border: 1px solid transparent; color: #d7dee8;
+    font-size: 11px; line-height: 1.15; text-align: center; border-radius: 8px; }
+  .jump button:hover { background: #2f3542; }
+  .jump button.active { border-color: var(--yellow); background: #2f3542; color: #fff; }
+  .jump .num { position: absolute; top: 3px; left: 5px; font-size: 9.5px; color: var(--muted); }
+  .glyph { display: block; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; background: #262a33;
+         border-radius: 9px; margin-bottom: 7px; }
+  .seg label { position: relative; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg > label > span { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 4px; border-radius: 7px;
+              font-size: 12.5px; color: #c8d2df; cursor: pointer; white-space: nowrap; height: 100%; box-sizing: border-box; }
+  #segMoonIcon { display: flex; }
+  .seg > label > span:hover { background: #2f3542; }
+  .seg input:checked + span, .seg input:checked + span:hover { background: var(--blue); color: #fff; }
+  .seg input:focus-visible + span { outline: 2px solid var(--yellow); }
+  .seg input:disabled + span { opacity: .4; cursor: default; background: none; }
+  .seg .glyph, .seg .ico { width: 18px; height: 18px; }
+  .card { background: #262a33; border-radius: 10px; padding: 2px 10px; }
+  .toggle { display: flex; align-items: center; gap: 10px; padding: 8px 0; cursor: pointer; }
+  .toggle + .toggle { border-top: 1px solid #323846; }
+  .toggle .ico { color: #9ad0ff; }
+  .toggle .txt { flex: 1; font-size: 13.5px; }
+  .toggle small { display: block; color: var(--muted); font-size: 11.5px; }
+  .switch { appearance: none; -webkit-appearance: none; margin: 0; flex: none; width: 36px; height: 20px; border-radius: 10px;
+            background: #444c5c; position: relative; cursor: pointer; transition: background .15s; }
+  .switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+                    background: #fff; transition: transform .15s; }
+  .switch:checked { background: var(--yellow); }
+  .switch:checked::before { transform: translateX(16px); }
+  .btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+  .btnrow button { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12.5px; padding: 8px 4px; white-space: nowrap; }
+  .hint { color: var(--muted); font-size: 12px; margin: 10px 2px 0; }
+  details.keys { margin-top: 12px; background: #262a33; border-radius: 10px; padding: 8px 10px; font-size: 12.5px; }
+  details.keys summary { display: flex; align-items: center; gap: 8px; cursor: pointer; color: #c8d2df; list-style: none; }
+  details.keys summary::-webkit-details-marker { display: none; }
+  details.keys summary::after { content: "▸"; margin-left: auto; color: var(--muted); }
+  details.keys[open] summary::after { content: "▾"; }
+  details.keys dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; margin: 10px 0 2px; }
+  details.keys dt { white-space: nowrap; } details.keys dd { margin: 0; color: #c8d2df; }
+  button { font: inherit; color: #fff; background: var(--blue); border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--blue-hi); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--yellow); outline-offset: 1px; }
+  .opt { display: flex; align-items: flex-start; gap: 7px; margin: 5px 0; cursor: pointer; }
+  .opt input { margin-top: 3px; accent-color: var(--yellow); }
+  .opt.disabled { opacity: .45; cursor: default; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  .wide { width: 100%; margin-top: 10px; }
+  /* Enter VR: top-right corner of the 3D view, at least 48 px tall (Meta's guidance for
+     laser-pointer targets), so it is at the top of the page in every layout */
+  #vrBtn { position: absolute; top: 10px; right: 10px; z-index: 4; height: 48px; padding: 0 18px 0 14px;
+           display: inline-flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 700;
+           background: #7a3fb0; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  #vrBtn[hidden] { display: none; }
+  /* keep the 3D view's title and notes clear of the button when it is showing */
+  #stage:has(#vrBtn:not([hidden])) #orbitTitle,
+  #stage:has(#vrBtn:not([hidden])) #followNote { right: 160px; }
+  #vrBtn:hover { background: #8d50c4; }
+  #vrBtn svg { width: 26px; height: 26px; fill: none; stroke: #fff; stroke-width: 1.7; stroke-linejoin: round; }
+  #scaleNote, .credits { color: var(--muted); font-size: 12.5px; font-style: italic; margin-top: 12px; }
+  .credits { font-style: normal; font-size: 11.5px; }
+  kbd { font: 11px ui-monospace, monospace; background: #2c313d; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+
+  /* playback bar */
+  footer { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #15171d; border-top: 1px solid var(--line); z-index: 3; flex-wrap: wrap; }
+  footer button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; }
+  footer button svg { width: 18px; height: 18px; fill: currentColor; }
+  #loopBtn[aria-pressed="true"] { background: var(--yellow); color: #111; }
+  .track { position: relative; flex: 1 1 260px; min-width: 180px; padding-bottom: 8px; }
+  #slider { width: 100%; accent-color: var(--yellow); }
+  .ticks { position: absolute; left: 8px; right: 8px; bottom: 0; height: 6px; pointer-events: none; }
+  .ticks i { position: absolute; width: 1px; height: 6px; background: #6b7484; }
+  #dayLabel { min-width: 118px; font-variant-numeric: tabular-nums; }
+  footer label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+  footer input[type=number] { width: 62px; background: #262a33; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px; font: inherit; }
+
+  /* tilted orbit: extra controls shown only when it is switched on */
+  #tiltExtra { padding: 2px 0 10px; border-top: 1px solid #323846; }
+  #tiltExtra[hidden] { display: none; }
+  #tiltExtra label { display: flex; justify-content: space-between; font-size: 12.5px; color: #c8d2df; margin-top: 6px; }
+  #nodeSlider { width: 100%; accent-color: #ff9f43; }
+  #tiltExtra small { color: var(--muted); font-size: 11.5px; display: block; }
+  .eclipse { margin: 8px 0; padding: 7px 9px; border-radius: 8px; background: #262a33; font-size: 13px; }
+  .eclipse b.yes { color: #ff9f43; }
+  /* quiz */
+  #quizBtn { width: 100%; margin-top: 6px; display: flex; align-items: center; justify-content: center; gap: 6px;
+             background: #3d7a4f; font-size: 13.5px; padding: 9px 4px; }
+  #quizBtn:hover { background: #4a9160; }
+  body.quizzing #quizBtn { background: #7a3d3d; }
+  #quizBox[hidden], #quizCover[hidden] { display: none; }
+  #quizBox h3 { margin: 4px 0 2px; color: var(--yellow); font-size: 20px; display: flex; justify-content: space-between; align-items: baseline; }
+  #quizBox h3 small { color: var(--muted); font-size: 13px; font-weight: 600; }
+  #qText { font-size: 14px; }
+  #qFeedback { font-size: 14px; min-height: 1.4em; }
+  #qFeedback.right { color: #7ee08f; } #qFeedback.wrong { color: #ff9f8a; }
+  #quizBox .btnrow button.primary { background: #3d7a4f; }
+  #quizCover { position: absolute; inset: 0; z-index: 3; background: #04050a; display: flex; align-items: center; justify-content: center; }
+  #quizCover img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #quizCover .qmark { font-size: 96px; font-weight: 800; color: #3a4150; }
+  #quizCover .caption.top { color: #fff; font-weight: 600; }
+  body.quizzing .phaseTag { visibility: hidden; }
+  body.quizzing #phaseName, body.quizzing #info { display: none; }
+  #qNext[hidden] { display: none; }
+  body.quizzing footer .track, body.quizzing #dayLabel { visibility: hidden; }
+  body.quizzing #restartBtn, body.quizzing #backBtn,
+  body.quizzing #playBtn, body.quizzing #fwdBtn { opacity: .35; pointer-events: none; }
+  body.quizzing .jump button.wrongPick { border-color: #ff7b66; }
+  #glError { display: none; position: fixed; inset: 0; z-index: 10; background: var(--bg); padding: 40px; font-size: 16px; }
+
+  @media (max-width: 1280px) and (min-width: 981px) {
+    main { grid-template-columns: 260px minmax(0, 1fr) 270px; }
+  }
+  @media (max-width: 980px) {
+    /* Phones and narrow windows: the 3D view, the playback bar, the view from Earth + info, then the controls */
+    body { height: auto; overflow: auto; display: flex; flex-direction: column; }
+    main { display: contents; }
+    #stage { order: 1; height: 72vh; }
+    #skyView { max-width: 440px; margin: 0 auto 10px; }
+    footer { order: 2; gap: 6px 6px; padding: 6px 8px; }
+    aside { border: 0 !important; border-top: 1px solid var(--line) !important; overflow: visible; }
+    /* the view from Earth and the phase info, then the controls */
+    #infoPanel { order: 3; }
+    #controls { order: 4; }
+    footer button { padding: 6px 8px; }
+    footer .lbl { display: none; }
+    .track { order: 10; flex-basis: 100%; }
+    #dayLabel { min-width: 0; font-size: 13px; }
+    footer label { font-size: 13px; }
+    footer input[type=number] { width: 48px; }
+    .label { font-size: 11px; }
+  }
+</style>
+<script type="importmap">
+__IMPORTMAP__
+</script>
+</head>
+<body>
+<main>
+  <aside id="controls" aria-label="Controls">
+    <div class="brand"><img id="brandIcon" alt=""><h1>Phases of the Moon</h1></div>
+
+    <h2 class="sec">Jump to a phase</h2>
+    <div class="jump" id="jump"></div>
+
+    <h2 class="sec">Top-right view: the sky seen…</h2>
+    <div class="seg" role="radiogroup" aria-label="View from Earth or the Moon">
+      <label title="Shortcut: V"><input type="radio" name="viewFrom" value="earth" checked><span><span id="segMoonIcon"></span>From Earth</span></label>
+      <label title="Shortcut: V"><input type="radio" name="viewFrom" value="moon"><span>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#2f6fb3" stroke="none"/><path d="M7 7c2 1 3 0 4 2s-1 3 0 4 3 0 3 3M14 4c0 2 2 2 3 3s3 1 3 3" stroke="#7fbf5a" stroke-width="2" fill="none"/></svg>From the Moon</span></label>
+    </div>
+    <div class="seg hemiSeg" role="radiogroup" aria-label="Observer's hemisphere" id="hemiLabel">
+      <label class="hemi" title="Shortcut: H"><input type="radio" name="hemi" value="north" checked><span>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12a9 9 0 0 1 18 0z" fill="currentColor"/></svg>Northern</span></label>
+      <label class="hemi" title="Shortcut: H"><input type="radio" name="hemi" value="south"><span>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12a9 9 0 0 0 18 0z" fill="currentColor"/></svg>Southern</span></label>
+    </div>
+
+    <h2 class="sec">Show</h2>
+    <div class="card">
+      <label class="toggle" title="Shortcut: E">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+        <span class="txt">Spin the Earth<small>once a day on its axis</small></span>
+        <input type="checkbox" class="switch" id="spinBox"></label>
+      <label class="toggle" title="Shortcut: C">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" stroke-dasharray="2.6 2.6"/><circle cx="12" cy="12" r="5"/><path d="M12 7a5 5 0 0 1 0 10z" fill="currentColor"/></svg>
+        <span class="txt" id="ringText">The half facing Earth<small>the part of the Moon we can see</small></span>
+        <input type="checkbox" class="switch" id="ringBox" checked></label>
+      <label class="toggle" title="Shortcut: R">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="8" width="20" height="8" rx="1.5"/><path d="M6 8v3M10 8v4.5M14 8v3M18 8v4.5"/></svg>
+        <span class="txt">Real scale<small>true sizes and distances</small></span>
+        <input type="checkbox" class="switch" id="scaleBox"></label>
+      <label class="toggle" title="Shortcut: O">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-14 12 12)"/><path d="M2 12h20" stroke-dasharray="2 2"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>
+        <span class="txt">Tilted orbit &amp; eclipses<small>the Moon's orbit is tilted 5°</small></span>
+        <input type="checkbox" class="switch" id="tiltBox"></label>
+      <div id="tiltExtra" hidden>
+        <label for="nodeSlider"><span>Which way the tilt points</span><span id="nodeVal"></span></label>
+        <input type="range" id="nodeSlider" min="0" max="359" step="1" value="90">
+        <small>The tilt turns slowly as the Earth goes round the Sun, so it lines up with the Sun about every 6 months ("eclipse seasons"). Playing the animation turns it too.</small>
+      </div>
+    </div>
+
+    <div class="btnrow">
+      <button id="zoomBtn" disabled title="Real scale only. Shortcut: Z">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span class="lbl">Zoom to the Sun</span></button>
+      <button id="resetBtn" title="Shortcut: T or Esc">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span class="lbl">Reset view</span></button>
+    </div>
+    <button id="quizBtn" title="Shortcut: Q">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.2 9.2a2.9 2.9 0 1 1 4.2 2.6c-.9.5-1.4 1.1-1.4 2.1"/><circle cx="12" cy="17.2" r=".9" fill="currentColor"/></svg>
+      <span class="lbl">Quiz me</span></button>
+    <p class="hint" id="vrNote"></p>
+    <p class="hint">Drag the orbit view to rotate it, scroll or pinch to zoom. <b>Drag the Moon</b> to move it around its orbit. <b>Double-click</b> the Sun, Earth or Moon to centre on it.</p>
+
+    <details class="keys">
+      <summary><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h1M10 10h1M14 10h1M18 10h0M7 14h10"/></svg>Keyboard shortcuts</summary>
+      <dl>
+        <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Step a day</dd>
+        <dt><kbd>Home</kbd></dt><dd>Back to New Moon</dd>
+        <dt><kbd>1</kbd>–<kbd>8</kbd></dt><dd>Jump to a phase</dd>
+        <dt><kbd>L</kbd></dt><dd>Loop on / off</dd>
+        <dt><kbd>V</kbd></dt><dd>Switch the view at top right</dd>
+        <dt><kbd>H</kbd></dt><dd>Northern / Southern</dd>
+        <dt><kbd>E</kbd> <kbd>C</kbd> <kbd>R</kbd></dt><dd>Spin, half-facing ring, real scale</dd>
+        <dt><kbd>O</kbd></dt><dd>Tilted orbit and eclipses</dd>
+        <dt><kbd>Q</kbd></dt><dd>Start / end the quiz</dd>
+        <dt><kbd>Z</kbd></dt><dd>Zoom out to the Sun (real scale)</dd>
+        <dt><kbd>T</kbd> <kbd>Esc</kbd></dt><dd>Reset the orbit view</dd>
+      </dl>
+    </details>
+    <div id="scaleNote"></div>
+    <div class="credits">Based on the "Phases of the Moon" poster by Oliver Cohen (7D).
+      Earth: NASA Blue Marble (public domain). Moon: <a href="https://www.solarsystemscope.com/textures/" style="color:inherit">Solar System Scope</a>,
+      based on NASA data (CC BY 4.0). Coastlines: Natural Earth (public domain).</div>
+  </aside>
+ <div id="stage">
+  <canvas id="gl"></canvas>
+  <button id="vrBtn" hidden title="Enter VR (headset)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 8.5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-4.2l-2-2.6h-2.6l-2 2.6H4.5a2 2 0 0 1-2-2z"/><circle cx="7.6" cy="12" r="1.7"/><circle cx="16.4" cy="12" r="1.7"/></svg>
+    Enter VR</button>
+  <section class="view" id="orbitView" aria-label="Orbit view: the Sun, Earth and Moon seen from above the North Pole">
+    <div class="labels" id="orbitLabels"></div>
+    <div class="caption top" id="orbitTitle"></div>
+    <div class="caption top" id="followNote" style="top: 30px; font-size: 13px; color: var(--yellow)"></div>
+    <div class="caption corner" id="realCaption"></div>
+  </section>
+ </div>
+  <aside id="infoPanel" aria-label="About this phase">
+    <section class="view" id="skyView" aria-label="The view from Earth or from the Moon">
+      <canvas id="skyGl"></canvas>
+      <div class="caption top" id="skyTitle"></div>
+      <div class="caption bottom" id="skyNote"></div>
+      <div id="quizCover" hidden><img id="quizImg" alt=""><div class="qmark" id="quizMark">?</div>
+        <div class="caption top" id="quizCap"></div></div>
+    </section>
+    <div id="quizBox" hidden aria-live="polite">
+      <h3>Quiz <small id="qScore"></small></h3>
+      <p id="qText"></p>
+      <p id="qFeedback"></p>
+      <div class="btnrow"><button id="qNext" class="primary" hidden>Next question</button><button id="qEnd">End quiz</button></div>
+    </div>
+    <div id="phaseName"></div>
+    <div id="info"></div>
+  </aside>
+</main>
+<footer>
+  <button id="restartBtn" title="Back to New Moon (Home)" aria-label="Back to New Moon"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14l-10-7z"/></svg></button>
+  <button id="backBtn" title="Step back one day (Left arrow)" aria-label="Step back one day"><svg viewBox="0 0 24 24"><path d="M12 6v12L3 12zM21 6v12l-9-6z"/></svg></button>
+  <button id="playBtn" title="Play / pause (Space)" aria-label="Play"><svg viewBox="0 0 24 24" id="playIcon"><path d="M7 5v14l12-7z"/></svg></button>
+  <button id="fwdBtn" title="Step forward one day (Right arrow)" aria-label="Step forward one day"><svg viewBox="0 0 24 24"><path d="M3 6v12l9-6zM12 6v12l9-6z"/></svg></button>
+  <button id="loopBtn" title="Repeat the cycle (L)" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z"/></svg><span class="lbl">Loop</span></button>
+  <div class="track">
+    <input type="range" id="slider" min="0" max="2953" step="1" value="0" aria-label="Day of the lunar cycle">
+    <div class="ticks" id="ticks"></div>
+  </div>
+  <span id="dayLabel"></span>
+  <label>FPS <input type="number" id="fpsBox" min="1" max="60" value="30"></label>
+  <label>Speed <input type="number" id="speedBox" min="0.1" max="15" step="0.5" value="2"> <span>days/s</span></label>
+</footer>
+<div id="glError">This simulator needs WebGL, which isn't available in this browser or on this device.</div>
+
+<script id="landData" type="application/json">__LAND_JSON__</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+
+// =====================================================================================
+// Model constants (scene units: 1 = Earth radius)
+// =====================================================================================
+// Which copy of the page this is: "site" (GitHub Pages: VR, offline, installable) or
+// "claude" (the claude.ai artifact, where VR is blocked). Filled in by build.py.
+const TARGET = "__TARGET__";
+const SITE_URL = "https://raymondcohencsiro.github.io/moon-phases/";
+const SYNODIC = 29.53;                       // days from one New Moon to the next
+const OBSERVER_LAT = 35;                     // degrees (Sydney ~34S, Tokyo ~35N)
+const SUN_DIR = new THREE.Vector3(-1, 0, 0); // from Earth/Moon towards the Sun
+const YELLOW = 0xffd400;
+
+const MODEL = { real: false, moonR: 0.42, orbitR: 4.0, sunC: [-13.5, 0, 0], sunR: 5.0,
+                viewC: [-1.45, -0.35], viewHalf: [8.4, 6.6] };
+const REAL = { real: true, moonR: 0.2727, orbitR: 60.27, sunC: [-23455, 0, 0], sunR: 109,
+               viewC: [-0.06 * 60.27, 0], viewHalf: [1.74 * 60.27, 1.45 * 60.27] };
+
+const PHASES = [
+  ["New Moon", 0, "The Moon is between the Earth and the Sun. Its lit half faces away from us, so we can't see it, and it is lost in the Sun's glare. This is the start of the lunar cycle."],
+  ["Waxing Crescent", SYNODIC / 8, "A thin sliver of the sunlit half comes into view. 'Waxing' means growing: each night a little more is lit. Look for it in the west after sunset."],
+  ["First Quarter", SYNODIC * 2 / 8, "About a week after New Moon. The Moon is a quarter of the way round its orbit and we see exactly half of its face lit."],
+  ["Waxing Gibbous", SYNODIC * 3 / 8, "More than half of the face is lit and it is still growing. The last phase before Full Moon."],
+  ["Full Moon", SYNODIC * 4 / 8, "The Earth is between the Sun and the Moon, so the whole lit half faces us. It rises at sunset and is up all night."],
+  ["Waning Gibbous", SYNODIC * 5 / 8, "After Full Moon the lit part starts to shrink ('waning'), but it is still more than half. It rises later each evening."],
+  ["Last Quarter", SYNODIC * 6 / 8, "Three-quarters of the way round its orbit. Half the face is lit again, but the opposite half to First Quarter. Best seen in the morning."],
+  ["Waning Crescent", SYNODIC * 7 / 8, "The final phase. The sliver shrinks each morning until it disappears into the next New Moon."],
+];
+
+// Lunar maria: selenographic lat, lon, radius (degrees)
+const MARIA = [[33,-16,17],[28,17,10],[8.5,31,11],[17,59,7],[-8,51,9],[-15,35,5],[-21,-17,9],
+               [15,-55,20],[-5,-40,12],[-24,-39,5],[56,0,7],[55,25,6],[-1,-14,6]];
+
+// =====================================================================================
+// Astronomy helpers
+// =====================================================================================
+const orbitAngle = d => Math.PI + 2 * Math.PI * d / SYNODIC;   // anticlockwise from +x
+// The Moon's orbit is tilted 5.1° to the plane of the Earth's orbit. It crosses that plane
+// along the "line of nodes", which (seen with the Sun fixed on the left, as here) turns
+// clockwise by about 1.04° a day, lining up with the Sun every 173 days: eclipse seasons.
+// orbitQ holds the tilt (no rotation when the tilt is switched off).
+const INCL = 5.145, TILT_EXAG = 3, NODE_RATE = 360 / 346.62;
+const orbitQ = new THREE.Quaternion(), orbitQinv = new THREE.Quaternion();
+const moonPos = (d, R) => new THREE.Vector3(Math.cos(orbitAngle(d)) * R, Math.sin(orbitAngle(d)) * R, 0).applyQuaternion(orbitQ);
+// Eclipses, worked out with the real 5.1° tilt and real sizes (whatever the drawing shows).
+// Returns the angle (degrees) between the Moon and the Sun, and between the Moon and the
+// middle of the Earth's shadow, plus the Moon's height above/below the Earth's orbit plane
+// at this month's New and Full Moon.
+function eclipseInfo(d, nodeDeg) {
+  const n = new THREE.Vector3(Math.cos(nodeDeg * Math.PI / 180), Math.sin(nodeDeg * Math.PI / 180), 0);
+  const q = new THREE.Quaternion().setFromAxisAngle(n, INCL * Math.PI / 180);
+  const m = new THREE.Vector3(Math.cos(orbitAngle(d)), Math.sin(orbitAngle(d)), 0).applyQuaternion(q);
+  const deg = v => Math.acos(Math.max(-1, Math.min(1, v))) * 180 / Math.PI;
+  const beta = Math.asin(Math.sin(INCL * Math.PI / 180) * Math.sin(nodeDeg * Math.PI / 180)) * 180 / Math.PI;
+  return { fromSun: deg(-m.x), fromShadow: deg(m.x), beta };
+}
+const SOLAR_LIMIT = 1.5, LUNAR_LIMIT = 0.96, TOTAL_LIMIT = 0.44;   // degrees (umbra ±Moon's radius)
+const litFraction = d => (1 - Math.cos(2 * Math.PI * d / SYNODIC)) / 2;
+const phaseIndex = d => Math.floor(d / SYNODIC * 8 + 0.5) % 8;
+function clock(h) {
+  let t = Math.round(((h % 24) + 24) % 24 * 12) * 5, hh = Math.floor(t / 60) % 24, mm = t % 60;
+  return `${hh % 12 || 12}:${String(mm).padStart(2, "0")} ${hh < 12 ? "am" : "pm"}`;
+}
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const lonLatToXYZ = (lon, lat, r = 1) => { const L = lon * Math.PI / 180, B = lat * Math.PI / 180;
+  return [r * Math.cos(B) * Math.cos(L), r * Math.cos(B) * Math.sin(L), r * Math.sin(B)]; };
+
+// =====================================================================================
+// Textures drawn by the page (no image downloads needed)
+// =====================================================================================
+const LAND = JSON.parse(document.getElementById("landData").textContent);
+
+function earthTexture() {
+  const W = 2048, H = 1024, cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d");
+  const y = lat => (90 - lat) / 180 * H, x = lon => (lon + 180) / 360 * W;
+  const ocean = g.createLinearGradient(0, 0, 0, H);
+  ocean.addColorStop(0, "#1d3f63"); ocean.addColorStop(0.5, "#1f5d97"); ocean.addColorStop(1, "#1d3f63");
+  g.fillStyle = ocean; g.fillRect(0, 0, W, H);
+  const land = g.createLinearGradient(0, 0, 0, H);         // colour by latitude
+  [[90,"#d9dfe3"],[70,"#8a9474"],[58,"#4f7a3a"],[42,"#6b8a3e"],[32,"#c2a66b"],[20,"#cfae6e"],
+   [10,"#3f7a2e"],[0,"#2f6e2a"],[-10,"#3f7a2e"],[-22,"#c9a86a"],[-32,"#8d9a55"],[-48,"#5e7f43"],[-90,"#d9dfe3"]]
+    .forEach(([lat, c]) => land.addColorStop(y(lat) / H, c));
+  const fill = (rings, style) => {
+    g.fillStyle = style; g.beginPath();
+    for (const r of rings) {
+      g.moveTo(x(r[0] / 10), y(r[1] / 10));
+      for (let i = 2; i < r.length; i += 2) g.lineTo(x(r[i] / 10), y(r[i + 1] / 10));
+      g.closePath();
+    }
+    g.fill("evenodd");
+  };
+  fill(LAND.land, land);
+  fill(LAND.ice, "#eef2f5");
+  // Antarctica's polygon stops short of the pole; finish the ice cap
+  g.fillStyle = "#eef2f5"; g.fillRect(0, y(-85), W, H - y(-85));
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function moonTexture() {
+  const W = 1024, H = 512, cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d"), img = g.createImageData(W, H), rnd = mulberry32(7);
+  const craters = Array.from({ length: 70 }, () => [rnd() * 160 - 80, rnd() * 360 - 180, 1 + rnd() * 2.5]);
+  const maria = MARIA.map(([la, lo, r]) => [Math.sin(la * Math.PI / 180), Math.cos(la * Math.PI / 180), lo * Math.PI / 180, r]);
+  for (let j = 0; j < H; j++) {
+    const lat = 90 - (j + 0.5) / H * 180, B = lat * Math.PI / 180, sB = Math.sin(B), cB = Math.cos(B);
+    for (let i = 0; i < W; i++) {
+      const lon = (i + 0.5) / W * 360 - 180, L = lon * Math.PI / 180;
+      let a = 0.80 + 0.03 * (rnd() - 0.5);
+      for (const [s0, c0, L0, r] of maria) {
+        const d = Math.acos(Math.min(1, Math.max(-1, sB * s0 + cB * c0 * Math.cos(L - L0)))) * 180 / Math.PI;
+        a -= 0.40 * Math.exp(-((d / r) ** 4));
+      }
+      for (const [la, lo, r] of craters) {
+        const dl = Math.abs(lat - la); if (dl > 8) continue;
+        const d = Math.hypot(dl, (lon - lo) * cB);
+        if (d < 8) a += 0.12 * Math.exp(-((d / r) ** 2));
+      }
+      const v = Math.max(0.25, Math.min(1, a)) * 205, k = (j * W + i) * 4;
+      img.data[k] = v; img.data[k + 1] = v * 0.985; img.data[k + 2] = v * 0.96; img.data[k + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+// The app icon: a waxing gibbous Moon (also used as the favicon)
+function drawIcon(size, litFrac = 0.78) {
+  const cv = document.createElement("canvas"); cv.width = cv.height = size;
+  const g = cv.getContext("2d"), c = size / 2, r = size * 0.4, k = 2 * litFrac - 1;
+  const glow = g.createRadialGradient(c, c, 0, c, c, size / 2);
+  glow.addColorStop(0.7, "rgba(255,236,170,0.43)"); glow.addColorStop(1, "rgba(255,236,170,0)");
+  g.fillStyle = glow; g.fillRect(0, 0, size, size);
+  g.fillStyle = "#2b3040"; g.beginPath(); g.arc(c, c, r, 0, 2 * Math.PI); g.fill();
+  const lit = new Path2D();
+  lit.arc(c, c, r, -Math.PI / 2, Math.PI / 2);
+  lit.ellipse(c, c, k * r, r, 0, Math.PI / 2, 3 * Math.PI / 2);
+  lit.closePath();
+  const sh = g.createRadialGradient(c + r * .25, c - r * .25, 0, c + r * .25, c - r * .25, r * 1.4);
+  sh.addColorStop(0, "#fffdf2"); sh.addColorStop(0.7, "#e9e4d4"); sh.addColorStop(1, "#bdb8aa");
+  g.fillStyle = sh; g.fill(lit);
+  if (size >= 24) {
+    g.save(); g.clip(lit);
+    for (const [dx, dy, rx, ry, a] of [[-.22,-.38,.30,.24,.47],[.10,-.30,.17,.15,.43],[.25,0,.20,.16,.45],
+        [.62,-.18,.10,.08,.47],[.48,.22,.12,.10,.37],[.22,.32,.08,.07,.35],[-.12,.38,.17,.12,.37],
+        [-.55,0,.30,.40,.43],[-.02,-.66,.30,.07,.31]]) {
+      g.save(); g.translate(c + dx * r, c + dy * r); g.scale(rx * r, ry * r);
+      const m = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+      m.addColorStop(0, `rgba(135,132,126,${a})`); m.addColorStop(.65, `rgba(140,137,130,${a * .8})`);
+      m.addColorStop(1, "rgba(150,146,138,0)");
+      g.fillStyle = m; g.beginPath(); g.arc(0, 0, 1, 0, 2 * Math.PI); g.fill(); g.restore();
+    }
+    g.restore();
+  }
+  return cv.toDataURL("image/png");
+}
+document.getElementById("favicon").href = drawIcon(64);
+document.getElementById("brandIcon").src = drawIcon(96);
+
+// =====================================================================================
+// Renderer, scene, cameras. ONE scene seen by TWO cameras; layers decide which objects
+// each camera can see. Lights are on every layer so both views share the same sunlight.
+// =====================================================================================
+const canvas = document.getElementById("gl");
+let renderer;
+try {
+  // No "logarithmic depth" here (it costs every pixel extra work, too much for a headset's
+  // graphics chip). Real scale's huge range of distances is handled by setting the orbit
+  // camera's near/far limits to suit each view instead (see renderView).
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+} catch (e) {
+  document.getElementById("glError").style.display = "block";
+  throw e;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setScissorTest(true);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.xr.enabled = true;                       // VR mode (WebXR); off until a session starts
+renderer.xr.setReferenceSpaceType("local-floor");
+renderer.xr.setFramebufferScaleFactor(0.8);        // ~36% fewer pixels per eye: steadier frame rate on Quest 2
+renderer.xr.setFoveation(1);                       // full fixed foveation: fewer pixels at the edges of the view
+
+// The view from Earth / the Moon has its own small canvas in the right-hand panel.
+const skyCanvas = document.getElementById("skyGl");
+const skyRenderer = new THREE.WebGLRenderer({ canvas: skyCanvas, antialias: true, logarithmicDepthBuffer: true });
+skyRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+skyRenderer.outputColorSpace = THREE.SRGBColorSpace;
+skyRenderer.setClearColor(0x04050a);
+
+// Layers 1 and 2 are used by three.js in VR for the left and right eye, so the two views
+// use layers 3 and 4.
+const ORBIT = 3, SKY = 4;
+const scene = new THREE.Scene();
+// Everything in the Sun-Earth-Moon model lives in "world" (units: Earth radii, z = north).
+// On a screen it is left as it is; in VR it is shrunk to tabletop size, stood upright
+// (VR's "up" is y) and placed in front of you.
+const world = new THREE.Group();
+scene.add(world);
+const orbitCam = new THREE.PerspectiveCamera(30, 1, 0.01, 1e6);
+orbitCam.up.set(0, 0, 1);
+orbitCam.layers.set(ORBIT);
+const skyCam = new THREE.PerspectiveCamera(20, 1, 0.001, 1e6);
+skyCam.layers.set(SKY);
+
+function setLayers(obj, ...layers) {
+  obj.traverse(o => { o.layers.disableAll(); layers.forEach(l => o.layers.enable(l)); });
+  return obj;
+}
+
+// Sunlight: parallel rays travelling in the +x direction, plus a little earthshine
+const sun = new THREE.DirectionalLight(0xffffff, 3.2);
+sun.position.copy(SUN_DIR).multiplyScalar(100);
+world.add(sun, sun.target);
+const ambient = new THREE.AmbientLight(0xffffff, 0.035);
+world.add(ambient);
+sun.layers.enableAll(); ambient.layers.enableAll();
+
+// Fat lines (WebGL draws ordinary lines 1 pixel wide)
+const lineMaterials = [];
+function fatLine(points, color, width, opacity = 1, closed = false) {
+  const geo = new LineGeometry();
+  const flat = points.flatMap(p => [p.x, p.y, p.z]);
+  if (closed) flat.push(flat[0], flat[1], flat[2]);
+  geo.setPositions(flat);
+  const mat = new LineMaterial({ color, linewidth: width, transparent: opacity < 1, opacity });
+  lineMaterials.push(mat);
+  return new Line2(geo, mat);
+}
+function setLinePoints(line, points, closed = false) {
+  const pts = closed ? [...points, points[0]] : points;
+  const attr = line.geometry.attributes.instanceStart;
+  const nSeg = pts.length - 1;
+  if (attr && attr.data.array.length === nSeg * 6) {
+    // Same number of segments: overwrite the existing buffer (no new GPU allocations)
+    const a = attr.data.array;
+    for (let i = 0; i < nSeg; i++) {
+      const p = pts[i], q = pts[i + 1], k = i * 6;
+      a[k] = p.x; a[k + 1] = p.y; a[k + 2] = p.z; a[k + 3] = q.x; a[k + 4] = q.y; a[k + 5] = q.z;
+    }
+    attr.data.needsUpdate = true;
+    line.geometry.computeBoundingSphere();
+    return;
+  }
+  line.geometry.setPositions(pts.flatMap(p => [p.x, p.y, p.z]));
+}
+function circle(centre, u, v, radius, n = 120) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / n * 2 * Math.PI;
+    pts.push(centre.clone().addScaledVector(u, radius * Math.cos(t)).addScaledVector(v, radius * Math.sin(t)));
+  }
+  return pts;
+}
+const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
+
+// ---- Earth -----------------------------------------------------------------------
+// Photo textures: separate image files on the website, embedded in the page on claude.ai
+// (which can't load images from elsewhere). If one fails, a drawn version is used instead.
+const EARTH_IMG = "__EARTH_URL__";
+const MOON_IMG = "__MOON_URL__";
+function photoTexture(uri, onFail) {
+  const tex = new THREE.TextureLoader().load(uri, () => (dirty = true), undefined, onFail);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+let coastlines;
+const earthMat = new THREE.MeshLambertMaterial();
+earthMat.color.setScalar(2.3);    // with the brightened photo, extra on the sunlit side
+// The night side: the surface glows faintly by itself (its own picture, dimmed), so the
+// continents stay just visible in the dark instead of going pitch black.
+earthMat.emissive.set(0xffffff);
+earthMat.emissiveIntensity = 0.10;
+earthMat.map = photoTexture(EARTH_IMG, () => {
+  earthMat.map = earthMat.emissiveMap = earthTexture(); earthMat.color.setScalar(1.3); earthMat.needsUpdate = true;
+  if (coastlines) coastlines.visible = true;
+  dirty = true;
+});
+earthMat.emissiveMap = earthMat.map;     // night-side glow uses the same picture
+// Brighter sunlit half: plain shading dims the lit side quickly towards the day/night
+// line, which made the Earth look dark whenever it is seen side-on. For the Earth only,
+// the lit side stays bright and then fades gradually through twilight into night.
+earthMat.onBeforeCompile = shader => {
+  shader.fragmentShader = shader.fragmentShader.replace("#include <lights_lambert_pars_fragment>",
+    THREE.ShaderChunk.lights_lambert_pars_fragment.replace(
+      "float dotNL = saturate( dot( geometryNormal, directLight.direction ) );",
+      // a broad twilight band: fades from full daylight ~33° before the day/night line
+      // to night ~9° past it, like the Earth's atmosphere softening the boundary
+      "float dotNL = smoothstep( -0.15, 0.55, dot( geometryNormal, directLight.direction ) );"));
+};
+const earth = new THREE.Group();
+{
+  const geo = new THREE.SphereGeometry(1, 128, 64).rotateX(Math.PI / 2);   // poles on z, lon 0 on +x
+  earth.add(new THREE.Mesh(geo, earthMat));
+  // coastlines
+  const pos = [];
+  for (const r of [...LAND.land, ...LAND.ice]) {
+    for (let i = 0; i + 3 < r.length; i += 2) {
+      pos.push(...lonLatToXYZ(r[i] / 10, r[i + 1] / 10, 1.002), ...lonLatToXYZ(r[i + 2] / 10, r[i + 3] / 10, 1.002));
+    }
+  }
+  const cg = new THREE.BufferGeometry();
+  cg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  // Coastline outlines are only needed on the drawn Earth (the photo shows them already)
+  coastlines = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 }));
+  coastlines.visible = false;
+  earth.add(coastlines);
+}
+const earthExtras = new THREE.Group();    // graticule + pole marker: orbit view only
+{
+  const pos = [];
+  const seg = (a, b) => pos.push(...a, ...b);
+  for (let lon = -180; lon < 180; lon += 30)
+    for (let lat = -90; lat < 90; lat += 3) seg(lonLatToXYZ(lon, lat, 1.004), lonLatToXYZ(lon, lat + 3, 1.004));
+  for (let lat = -60; lat <= 60; lat += 30)
+    for (let lon = -180; lon < 180; lon += 3) seg(lonLatToXYZ(lon, lat, 1.004), lonLatToXYZ(lon + 3, lat, 1.004));
+  const gg = new THREE.BufferGeometry();
+  gg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  earthExtras.add(new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: 0xcfd8e3, transparent: true, opacity: 0.3 })));
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 12).rotateX(Math.PI / 2),
+                              new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  pole.position.set(0, 0, 1.15);
+  earthExtras.add(pole);
+}
+earth.add(earthExtras);
+world.add(earth);
+
+// ---- Moon ------------------------------------------------------------------------
+// Texture centre (longitude 0, the middle of the near side) faces +x; east is +y.
+const moon = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 64).rotateX(Math.PI / 2),
+                            new THREE.MeshLambertMaterial());
+moon.material.map = photoTexture(MOON_IMG, () => { moon.material.map = moon.material.emissiveMap = moonTexture(); moon.material.needsUpdate = true; dirty = true; });
+// Earthshine: sunlight reflected off the Earth faintly lights the Moon's night side, so it is
+// never pitch black. Done as a dim glow of the Moon's own picture; its strength follows the
+// phase in updateScene() (strongest near New Moon, when the Moon sees a nearly full Earth).
+// Moon-like shading: lunar dust scatters light so that a Full Moon looks like an evenly
+// bright disc and crescents stay bright out to the edge (the Lommel-Seeliger law,
+// brightness ~ cos i / (cos i + cos e)), instead of the shaded-ball look of plain lighting.
+moon.material.onBeforeCompile = shader => {
+  shader.fragmentShader = shader.fragmentShader.replace("#include <lights_lambert_pars_fragment>",
+    THREE.ShaderChunk.lights_lambert_pars_fragment.replace(
+      "float dotNL = saturate( dot( geometryNormal, directLight.direction ) );",
+      `float cosI = saturate( dot( geometryNormal, directLight.direction ) );
+       float cosE = saturate( dot( geometryNormal, geometryViewDir ) );
+       float rawI = dot( geometryNormal, directLight.direction );
+       // softer edge between day and night (the Moon has no air, so it stays crisper than Earth's)
+       float dotNL = min( 1.6, 2.0 * cosI / ( cosI + cosE + 1e-3 ) ) * smoothstep( -0.03, 0.28, rawI );`));
+};
+moon.material.emissive.set(0xffffff);
+moon.material.emissiveMap = moon.material.map;
+world.add(moon);
+setLayers(moon, ORBIT, SKY);
+
+// ---- Sun: limb darkening + granulation in a shader, and a soft glow -----------------
+const sunGroup = new THREE.Group();
+{
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+      varying vec3 vN; varying vec3 vV; varying vec3 vP;
+      void main() {
+        vP = normalize(position);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalize(normalMatrix * normal);
+        vV = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+        #include <logdepthbuf_vertex>
+      }`,
+    fragmentShader: `
+      #include <common>
+      #include <logdepthbuf_pars_fragment>
+      varying vec3 vN; varying vec3 vV; varying vec3 vP;
+      float h(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+      float noise(vec3 p) {
+        vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z);
+      }
+      vec3 ramp(float b) {   // deep orange at the edge -> pale yellow-white in the middle
+        vec3 c0 = vec3(0.48,0.12,0.0), c1 = vec3(0.78,0.27,0.0), c2 = vec3(1.0,0.54,0.0),
+             c3 = vec3(1.0,0.76,0.23), c4 = vec3(1.0,0.91,0.54), c5 = vec3(1.0,0.98,0.90);
+        b = clamp((b - 0.25) / 0.75, 0.0, 1.0) * 5.0;
+        if (b < 1.0) return mix(c0, c1, b);
+        if (b < 2.0) return mix(c1, c2, b - 1.0);
+        if (b < 3.0) return mix(c2, c3, b - 2.0);
+        if (b < 4.0) return mix(c3, c4, b - 3.0);
+        return mix(c4, c5, b - 4.0);
+      }
+      void main() {
+        #include <logdepthbuf_fragment>
+        float mu = clamp(dot(normalize(vN), normalize(vV)), 0.0, 1.0);
+        float gran = noise(vP * 28.0) * 0.6 + noise(vP * 61.0) * 0.4 - 0.5;
+        float b = 1.0 - 0.75 * (1.0 - sqrt(mu)) + 0.07 * gran;   // I = 1 - u(1 - mu)
+        gl_FragColor = vec4(ramp(b), 1.0);
+      }`,
+  });
+  const sunBall = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), mat);
+  sunGroup.add(sunBall);
+  sunGroup.userData.ball = sunBall;
+  sunGroup.userData.detailed = mat;
+  sunGroup.userData.plain = new THREE.MeshBasicMaterial({ color: 0xffc23a });
+  // Glow: a camera-facing sprite. Its middle is hidden behind the Sun, so only the halo shows.
+  const cv = document.createElement("canvas"); cv.width = cv.height = 256;
+  const g = cv.getContext("2d"), grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  [[0, "rgba(255,240,170,1)"], [0.57, "rgba(255,226,130,1)"], [0.62, "rgba(255,190,70,0.55)"],
+   [0.72, "rgba(255,150,40,0.22)"], [0.85, "rgba(255,110,20,0.07)"], [1, "rgba(255,90,0,0)"]]
+    .forEach(([s, c]) => grad.addColorStop(s, c));
+  g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
+  const glowTex = new THREE.CanvasTexture(cv); glowTex.colorSpace = THREE.SRGBColorSpace;
+  // A flat card turned to face the viewer's EYE (see faceSunGlow), so the halo stays centred
+  // on the Sun even near the edge of a wide (headset) view.
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 3.5), new THREE.MeshBasicMaterial({
+    map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  sunGroup.add(glow);
+  sunGroup.userData.glow = glow;
+}
+world.add(sunGroup);
+setLayers(sunGroup, ORBIT);   // never drawn in the view from Earth (it'd fake an eclipse)
+
+// ---- The starry sky (both views) ------------------------------------------------------
+// A backdrop that sits around whichever camera is drawing, drawn first and never
+// depth-tested, so it is always "infinitely far away" behind the Sun, Earth and Moon.
+const skyDome = new THREE.Group();
+const GAL_N = new THREE.Vector3(0.30, -0.92, 0.26).normalize();   // Milky Way plane, steeply tilted to the orbit
+const GAL_C = new THREE.Vector3(-0.2, 0.0, -1.0).projectOnPlane(GAL_N).normalize();  // galactic centre (below the view)
+{
+  // Milky Way: a faint, patchy band of light with dark dust lanes, brightest towards the centre
+  // The Milky Way is worked out ONCE, at start-up, into an all-sky image (2048 x 1024), which
+  // is then simply displayed. Computing it afresh for every pixel of every frame was too
+  // slow for a headset's graphics chip.
+  const bake = new THREE.ShaderMaterial({
+    uniforms: { gN: { value: GAL_N }, gC: { value: GAL_C } },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: `
+      uniform vec3 gN; uniform vec3 gC; varying vec2 vUv;
+      float h(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+      float noise(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z); }
+      float fbm(vec3 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
+      void main() {
+        // the direction this pixel of the all-sky image stands for (same layout as a three.js sphere)
+        float phi = vUv.x * 6.28318530718, theta = (1.0 - vUv.y) * 3.14159265359;
+        vec3 d = vec3(-cos(phi) * sin(theta), cos(theta), sin(phi) * sin(theta));
+        float lat = asin(clamp(dot(d, gN), -1.0, 1.0));
+        float toCentre = acos(clamp(dot(normalize(d - gN * dot(d, gN)), gC), -1.0, 1.0));
+        float core = 0.45 + 1.1 * exp(-toCentre * toCentre / 0.55);
+        float width = 0.13 + 0.10 * exp(-toCentre * toCentre / 0.4);
+        float band = exp(-pow(lat / width, 2.0));
+        float clouds = fbm(d * 7.0);
+        float dust = smoothstep(0.42, 0.72, fbm(d * 11.0 + 3.0)) * exp(-pow(lat / (width * 0.35), 2.0));
+        float glow = band * core * (0.35 + 0.9 * clouds) * (1.0 - 0.75 * dust);
+        vec3 col = mix(vec3(0.62, 0.70, 0.95), vec3(1.0, 0.90, 0.78), exp(-toCentre * toCentre / 0.5));
+        gl_FragColor = vec4(col * glow * 0.15, 1.0);
+      }`,
+    depthTest: false, depthWrite: false,
+  });
+  const mwRT = new THREE.WebGLRenderTarget(2048, 1024, { depthBuffer: false });
+  mwRT.texture.colorSpace = THREE.SRGBColorSpace;     // stored as-is, displayed as-is
+  {
+    const bakeScene = new THREE.Scene(), bakeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    bakeScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bake));
+    const scissor = renderer.getScissorTest();
+    renderer.setScissorTest(false);
+    renderer.setRenderTarget(mwRT); renderer.render(bakeScene, bakeCam); renderer.setRenderTarget(null);
+    renderer.setScissorTest(scissor);
+    bake.dispose();
+  }
+  const mw = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), new THREE.MeshBasicMaterial({
+    map: mwRT.texture,
+    // Drawn in the solid pass (transparent: false) and first (renderOrder), never writing depth, so
+    // everything else - including the dark side of the Moon - is drawn over it.
+    side: THREE.BackSide, depthTest: false, depthWrite: false, transparent: false, blending: THREE.AdditiveBlending,
+  }));
+  mw.renderOrder = -20;
+
+  // Stars: realistic counts per brightness (many faint, few bright) and colours by temperature
+  const rnd = mulberry32(42), N = 22000, pos = [], col = [], size = [];
+  const tint = [[-0.3, [0.66, 0.78, 1.0]], [0.0, [0.84, 0.89, 1.0]], [0.4, [1.0, 0.99, 0.97]],
+                [0.7, [1.0, 0.93, 0.80]], [1.1, [1.0, 0.82, 0.62]], [1.6, [1.0, 0.70, 0.45]]];
+  const colourOf = bv => { for (let i = 1; i < tint.length; i++) if (bv <= tint[i][0]) {
+      const t = (bv - tint[i - 1][0]) / (tint[i][0] - tint[i - 1][0]);
+      return tint[i - 1][1].map((c, k) => c + (tint[i][1][k] - c) * t); }
+    return tint[tint.length - 1][1]; };
+  const gauss = () => Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(2 * Math.PI * rnd());
+  const u = new THREE.Vector3().crossVectors(GAL_N, X).normalize(), w = new THREE.Vector3().crossVectors(GAL_N, u);
+  const a0 = 10 ** (0.47 * -1.2), a1 = 10 ** (0.47 * 8.0);
+  for (let i = 0; i < N; i++) {
+    let d;
+    if (rnd() < 0.38) {                        // crowded towards the Milky Way
+      const L = rnd() * 2 * Math.PI, B = gauss() * 0.16;
+      d = u.clone().multiplyScalar(Math.cos(B) * Math.cos(L)).addScaledVector(w, Math.cos(B) * Math.sin(L)).addScaledVector(GAL_N, Math.sin(B));
+    } else {
+      d = new THREE.Vector3(gauss(), gauss(), gauss()).normalize();
+    }
+    const m = Math.log10(a0 + rnd() * (a1 - a0)) / 0.47;     // magnitude: N(<m) ∝ 10^(0.47 m)
+    const bright = Math.max(0, Math.min(1, (8.2 - m) / 8.5));
+    const bv = Math.max(-0.3, Math.min(1.7, 0.55 + 0.42 * gauss()));
+    const c = colourOf(bv), a = 0.5 + 0.5 * bright;
+    pos.push(d.x, d.y, d.z); col.push(c[0] * a, c[1] * a, c[2] * a);
+    size.push(1.6 + 4.2 * bright ** 2.2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute("size", new THREE.Float32BufferAttribute(size, 1));
+  const pts = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { pr: { value: renderer.getPixelRatio() }, gain: { value: 1.0 } },
+    vertexShader: `attribute float size; attribute vec3 color; uniform float pr; uniform float gain; varying vec3 vC;
+      void main() { vC = min(color * gain, vec3(1.0)); gl_PointSize = size * pr * (0.75 + 0.25 * gain);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `varying vec3 vC;
+      void main() { float r = length(gl_PointCoord - 0.5) * 2.0;
+        float a = smoothstep(1.0, 0.15, r);                 // soft round star
+        gl_FragColor = vec4(vC * a, 1.0); }`,
+    depthTest: false, depthWrite: false, transparent: false, blending: THREE.AdditiveBlending,
+  }));
+  pts.renderOrder = -10;
+  skyDome.add(mw, pts);
+  skyDome.userData.stars = pts;
+  skyDome.userData.mw = mw;
+  skyDome.traverse(o => (o.frustumCulled = false));
+}
+scene.add(skyDome);
+setLayers(skyDome, ORBIT, SKY);
+
+// ---- Sun arrow (inset view) ------------------------------------------------------
+const sunArrow = new THREE.Group();
+{
+  const m = new THREE.MeshBasicMaterial({ color: YELLOW });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.65, 12), m); shaft.position.y = 0.325;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.35, 16), m); tip.position.y = 0.825;
+  sunArrow.add(shaft, tip);
+}
+world.add(sunArrow);
+setLayers(sunArrow, SKY);
+
+// ---- The Sun's corona, seen around the Moon during a total solar eclipse (view from Earth)
+const corona = new THREE.Sprite((() => {
+  const cv = document.createElement("canvas"); cv.width = cv.height = 256;
+  const g = cv.getContext("2d"), grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  [[0, "rgba(255,255,255,1)"], [0.2, "rgba(255,250,235,1)"], [0.26, "rgba(235,240,255,0.75)"],
+   [0.4, "rgba(200,215,255,0.28)"], [0.65, "rgba(170,190,255,0.08)"], [1, "rgba(150,170,255,0)"]]
+    .forEach(([s, c]) => grad.addColorStop(s, c));
+  g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+})());
+corona.visible = false;
+world.add(corona);
+setLayers(corona, SKY);
+
+// ---- Orbit-view helpers that are the same at both scales --------------------------
+const observer = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 12), new THREE.MeshBasicMaterial({ color: 0xff4f4f }));
+const sight = fatLine([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)], 0x7fd3ff, 1.5, 0.8);
+const halfRing = fatLine(circle(new THREE.Vector3(), X, Z, 1), 0x7fd3ff, 3, 1, true);
+world.add(observer, sight, halfRing);
+[observer, sight, halfRing].forEach(o => setLayers(o, ORBIT));
+
+// =====================================================================================
+// HTML labels for the orbit view
+// =====================================================================================
+const labelBox = document.getElementById("orbitLabels");
+let labels = [];
+function addLabel(text, pos, cls = "tag", group = "always", xf = null) {
+  const el = document.createElement("div");
+  el.className = "label " + cls; el.textContent = text;
+  labelBox.appendChild(el);
+  const L = { el, pos: pos.clone(), group, xf }; labels.push(L); return L;
+}
+function clearLabels() { labels.forEach(l => l.el.remove()); labels = []; }
+
+// =====================================================================================
+// Scale-dependent parts of the orbit view (rebuilt when switching scale)
+// =====================================================================================
+let S = MODEL, scaleGroup = null, moonLocator = null, zoomT = 0;
+// Parts that tilt with the Moon's orbit, and the tilted-orbit extras (rebuilt with the scale)
+let orbitGroup = null, tiltParts = null, vrPhaseLabels = [];
+function disposeGroup(g) {
+  g.traverse(o => { o.geometry?.dispose(); if (o.material) { const i = lineMaterials.indexOf(o.material); if (i >= 0) lineMaterials.splice(i, 1); o.material.dispose?.(); } });
+  g.parent?.remove(g);
+}
+function buildScale(real) {
+  S = real ? REAL : MODEL;
+  if (scaleGroup) disposeGroup(scaleGroup);
+  clearLabels();
+  scaleGroup = new THREE.Group();
+  const R = S.orbitR, s = R / MODEL.orbitR;
+
+  // Sun: true size and place at real scale
+  sunGroup.position.set(...S.sunC);
+  sunGroup.scale.setScalar(S.sunR);
+
+  // Rays of sunlight
+  const rayMat = new THREE.MeshBasicMaterial({ color: YELLOW, transparent: true, opacity: 0.85 });
+  const [x0, len] = real ? [-1.42 * R, 0.17 * R] : [-8.0, 1.4];
+  for (const yy of [-3.2, -1.6, 0, 1.6, 3.2]) {
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02 * len, 0.02 * len, 0.75 * len, 8), rayMat);
+    shaft.rotation.z = -Math.PI / 2; shaft.position.set(x0 + 0.375 * len, yy * s, -0.9 * s);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.06 * len, 0.25 * len, 12), rayMat);
+    tip.rotation.z = -Math.PI / 2; tip.position.set(x0 + 0.875 * len, yy * s, -0.9 * s);
+    scaleGroup.add(shaft, tip);
+  }
+
+  // Orbit and direction arrows (in orbitGroup, which tilts when the tilted orbit is on)
+  orbitGroup = new THREE.Group();
+  scaleGroup.add(orbitGroup);
+  orbitGroup.add(fatLine(circle(new THREE.Vector3(), X, Y, R, 360), 0xffffff, 1.6, 0.7, true));
+  const coneMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+  for (let k = 0; k < 8; k++) {
+    const a = Math.PI + (k + 0.5) * Math.PI / 4;
+    const c = new THREE.Mesh(new THREE.ConeGeometry(0.09 * s, 0.25 * s, 12), coneMat);
+    c.position.set(R * Math.cos(a), R * Math.sin(a), 0);
+    c.quaternion.setFromUnitVectors(Y, new THREE.Vector3(-Math.sin(a), Math.cos(a), 0));
+    orbitGroup.add(c);
+  }
+
+  // The tilted orbit's extras: the plane of the Earth's orbit (a faint disc), the line of
+  // nodes where the Moon's orbit crosses it, and (real scale) the Earth's shadow.
+  tiltParts = new THREE.Group();
+  {
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(R * 1.3, 96), new THREE.MeshBasicMaterial({
+      color: 0x6fa8ff, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false }));
+    tiltParts.add(disc);
+    const nodes = new THREE.Group();
+    nodes.add(fatLine([new THREE.Vector3(-R * 1.22, 0, 0), new THREE.Vector3(R * 1.22, 0, 0)], 0xff9f43, 2, 0.95));
+    for (const sgn of [1, -1]) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.09 * s, 16, 12), new THREE.MeshBasicMaterial({ color: 0xff9f43 }));
+      m.position.set(sgn * R, 0, 0); nodes.add(m);
+    }
+    tiltParts.add(nodes);
+    tiltParts.userData.nodes = nodes;
+    // Earth's umbra: a cone pointing away from the Sun, about 0.72 Earth radii wide where the
+    // Moon crosses it (true proportions, so only drawn at real scale)
+    if (real) {
+      const L = R / (1 - 0.72);
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(1, L, 48, 1, true), new THREE.MeshBasicMaterial({
+        color: 0x000000, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+      cone.rotation.z = Math.PI / 2;      // tip pointing away from the Sun (+x)
+      cone.position.x = L / 2;
+      tiltParts.add(cone);
+    }
+    const nodeXf = v => v.applyAxisAngle(Z, state.node * Math.PI / 180);
+    tiltParts.userData.labels = [
+      addLabel("node", new THREE.Vector3(R * 1.13, 0, 0), "plain", "near", nodeXf),
+      addLabel("node", new THREE.Vector3(-R * 1.13, 0, 0), "plain", "near", nodeXf),
+    ];
+  }
+  scaleGroup.add(tiltParts);
+
+  // Labels
+  const tilted = v => v.applyQuaternion(orbitQ);
+  for (const [name, day] of PHASES) {
+    const a = orbitAngle(day);
+    addLabel(name, new THREE.Vector3((R + 1.35 * s) * Math.cos(a), (R + 1.35 * s) * Math.sin(a), 0), "tag phaseTag", "near", tilted);
+  }
+  moonLocator = null;
+  // Floating text labels for VR (the page's HTML labels can't be seen inside a headset)
+  vrLabels = new THREE.Group();
+  vrLabels.visible = VR.active;
+  vrPhaseLabels = [];
+  if (!real) {
+    for (const [name, day] of PHASES) {
+      const a = orbitAngle(day), rr = R + 1.45 * s;
+      const sp = textSprite(name, new THREE.Vector3(rr * Math.cos(a), rr * Math.sin(a), 0.5), 0.62);
+      orbitGroup.add(sp); vrPhaseLabels.push(sp);         // tilts with the orbit
+      sp.visible = VR.active;
+    }
+    vrLabels.add(textSprite("Sun", new THREE.Vector3(S.sunC[0], 0, S.sunR + 1.4), 0.9));
+  }
+  scaleGroup.add(vrLabels);
+  if (!real) {
+    addLabel("N", new THREE.Vector3(0, 0, 1.45), "plain", "near").when = () => camSign > 0;
+    addLabel("S", new THREE.Vector3(0, 0, -1.45), "plain", "near").when = () => camSign < 0;
+    addLabel("Sun", new THREE.Vector3(-9.3, 4.4, 0), "tag left", "near");
+  } else {
+    const loc = 0.045 * R;
+    scaleGroup.add(fatLine(circle(new THREE.Vector3(), X, Y, loc, 90), 0x9ad0ff, 2, 1, true));
+    addLabel("Earth", new THREE.Vector3(0, -loc * 1.9, 0), "blue", "near");
+    moonLocator = fatLine(circle(new THREE.Vector3(), X, Y, loc * 0.7, 90), 0xffffff, 2, 1, true);
+    scaleGroup.add(moonLocator);
+    const sc = new THREE.Vector3(...S.sunC);
+    scaleGroup.add(fatLine(circle(sc, X, Y, 6 * S.sunR, 90), YELLOW, 2, 1, true));
+    addLabel("The Sun, true size (circled)", sc.clone().add(new THREE.Vector3(0, 6 * S.sunR * 1.6, 0)), "tag left", "far");
+    scaleGroup.add(fatLine(circle(new THREE.Vector3(), X, Y, 6 * R, 90), 0x9ad0ff, 2, 1, true));
+    addLabel("Earth + Moon's orbit (circled)", new THREE.Vector3(-6 * R, 0, 0), "blue right", "far");
+  }
+  world.add(scaleGroup);
+  setLayers(scaleGroup, ORBIT);
+
+  moon.scale.setScalar(S.moonR);
+  updateOrbitTilt();
+  updateOrbitTitle();
+  zoomT = 0;
+  frameOrbit();
+}
+
+// =====================================================================================
+// Orbit camera framing, with a smooth zoom out to the Sun at real scale
+// =====================================================================================
+const orbitEl = document.getElementById("orbitView"), skyEl = document.getElementById("skyView");
+const controls = new OrbitControls(orbitCam, orbitEl);
+controls.enableDamping = false;
+controls.zoomToCursor = true;
+controls.addEventListener("change", () => (dirty = true));
+
+function sunFraming() {
+  const left = S.sunC[0] - S.sunR * 9, right = S.orbitR * 75, hw = (right - left) / 2;
+  return [[(left + right) / 2, 0], [hw, hw * 0.45]];
+}
+const PITCH = 45;     // degrees the orbit view looks down (90 would be straight down)
+function aspectOf(el) { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? r.width / r.height : 1; }
+function frameOrbit(t = zoomT) {
+  zoomT = t = Math.min(1, Math.max(0, t));
+  const [[cx0, cy0], [hw0, hh0]] = [S.viewC, S.viewHalf];
+  const [[cx1, cy1], [hw1, hh1]] = sunFraming();
+  const hw = hw0 * (hw1 / hw0) ** t, hh = hh0 * (hh1 / hh0) ** t;
+  const f = hw1 !== hw0 ? (hw - hw0) / (hw1 - hw0) : 0;
+  const cx = cx0 + (cx1 - cx0) * f, cy = cy0 + (cy1 - cy0) * f;
+  // The camera looks down at the orbit from the south, tilted 45° below the horizontal
+  // (straight overhead would be 90°). Tilting squashes the orbit's north-south extent
+  // to about sin(45°) of its size on screen, so less height is needed.
+  const A = aspectOf(orbitEl), T = Math.tan(15 * Math.PI / 180), P = PITCH * Math.PI / 180;
+  const dist = Math.max(hh * (0.15 + 0.85 * Math.sin(P)), hw / A) / T;
+  orbitCam.fov = 30;
+  // Southern Hemisphere (view from Earth): the same view turned upside down, looking up at
+  // the orbit from the south, the way Southern Hemisphere skies are oriented
+  const sg = viewSign();
+  swing = null; controls.enabled = true;
+  orbitCam.position.set(cx, cy - sg * dist * Math.cos(P), sg * dist * Math.sin(P));
+  setCameraUp(sg);
+  controls.target.set(cx, cy, 0);
+  controls.update();
+  for (const L of labels) L.zoomHide = L.group === "near" ? t > 0.35 : L.group === "far" ? t <= 0.35 : false;
+  updateCaption();
+  dirty = true;
+}
+function updateCaption() {
+  const t = zoomT, cap = document.getElementById("realCaption");
+  const tilt = !state.tilt ? "" : (S.real ? "" : "Tilt drawn 3× bigger. ") +
+    "Blue disc: the plane of the Earth's orbit. Orange: the line where the Moon's orbit crosses it (the nodes)." +
+    (S.real ? " Dark cone: the Earth's shadow." : "");
+  cap.textContent = !S.real ? tilt : (tilt ? tilt + " " : "") + (t > 0.5
+    ? "Earth to Sun: 23,500 Earth radii (150 million km), 390 times the Moon's distance. Scroll over the Sun to zoom in."
+    : "← The Sun is far off-screen to the left. Press Z (or 'Zoom to the Sun') to fly out to it.");
+}
+
+// ---- Main view follows the hemisphere ---------------------------------------------------
+// +1: looking down from the north (North up). -1: looking up from the south (South up).
+function viewSign() { return state.southern && state.viewFrom === "earth" && !(typeof VR !== "undefined" && VR.active) ? -1 : 1; }
+let camSign = 1, swing = null;
+function setCameraUp(sg) {
+  camSign = sg;
+  orbitCam.up.set(0, 0, sg);
+  // OrbitControls works out "up" once, when it is created; tell it about the new one
+  controls._quat.setFromUnitVectors(orbitCam.up, new THREE.Vector3(0, 1, 0));
+  controls._quatInverse.copy(controls._quat).invert();
+}
+function followHemisphere() {
+  const sg = viewSign();
+  updateOrbitTitle();
+  if (sg === camSign || swing) return;
+  // swing the camera over the top, half a turn about its own left-right axis, in ~1 s
+  orbitCam.updateMatrixWorld();
+  const axis = new THREE.Vector3().setFromMatrixColumn(orbitCam.matrixWorld, 0).normalize();
+  swing = { axis, offset: orbitCam.position.clone().sub(controls.target), up: orbitCam.up.clone(),
+            sg, t0: performance.now() };
+  controls.enabled = false;
+}
+function updateSwing(now) {
+  if (!swing) return;
+  const u = Math.min(1, (now - swing.t0) / (reducedMotion() ? 1 : 1000)), e = 0.5 - 0.5 * Math.cos(Math.PI * u);
+  const off = swing.offset.clone().applyAxisAngle(swing.axis, Math.PI * e);
+  orbitCam.position.copy(controls.target).add(off);
+  orbitCam.up.copy(swing.up).applyAxisAngle(swing.axis, Math.PI * e);
+  orbitCam.lookAt(controls.target);
+  if (u >= 1) {
+    const sg = swing.sg; swing = null;
+    setCameraUp(sg); controls.enabled = true; controls.update();
+  }
+  dirty = true;
+}
+const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+// =====================================================================================
+// State and per-frame update
+// =====================================================================================
+const state = { day: 0, southern: false, spin: false, ring: true, real: false, viewFrom: "earth",
+                playing: false, loop: true, tilt: false, node: 90 };
+
+// ---- The tilted orbit -------------------------------------------------------------------
+function updateOrbitTilt() {
+  const deg = !state.tilt ? 0 : S.real ? INCL : INCL * TILT_EXAG;    // exaggerated when not to scale
+  const N = state.node * Math.PI / 180;
+  orbitQ.setFromAxisAngle(new THREE.Vector3(Math.cos(N), Math.sin(N), 0), deg * Math.PI / 180);
+  orbitQinv.copy(orbitQ).invert();
+  orbitPlane.normal.copy(Z).applyQuaternion(orbitQ);
+  if (orbitGroup) orbitGroup.quaternion.copy(orbitQ);
+  if (tiltParts) {
+    tiltParts.visible = state.tilt;
+    tiltParts.userData.nodes.rotation.z = N;
+    tiltParts.userData.labels.forEach(L => (L.tiltHide = !state.tilt));
+  }
+}
+// Eclipse effects: a coppery Moon in the Earth's shadow, the Sun's corona around a New Moon
+const MOON_RED = new THREE.Color(0.62, 0.2, 0.09);
+function updateEclipse() {
+  let lunar = 0, solar = 0;
+  if (state.tilt) {
+    const e = eclipseInfo(state.day, state.node);
+    lunar = THREE.MathUtils.smoothstep(LUNAR_LIMIT - e.fromShadow, 0, LUNAR_LIMIT - TOTAL_LIMIT);
+    solar = THREE.MathUtils.smoothstep(SOLAR_LIMIT - e.fromSun, 0, 0.4);
+  }
+  moon.material.color.setRGB(1, 1, 1).lerp(MOON_RED, lunar);
+  if (lunar > 0) moon.material.color.multiplyScalar(1 - 0.45 * lunar);
+  corona.visible = solar > 0 && state.viewFrom === "earth";
+  corona.material.opacity = solar;
+  return { lunar, solar };
+}
+function updateOrbitTitle() {
+  const south = viewSign() < 0;
+  document.getElementById("orbitTitle").textContent = S.real
+    ? "REAL SCALE (Earth and Moon circled)"
+    : south ? "Looking up at the Moon's orbit from the south (not to scale)" : "Looking down on the Moon's orbit (not to scale)";
+  orbitEl.setAttribute("aria-label", south
+    ? "Orbit view: the Sun, Earth and Moon seen from below the South Pole"
+    : "Orbit view: the Sun, Earth and Moon seen from above the North Pole");
+}
+let dirty = true, litSide = "right", targetSize = 0, moonSize = 0, eclipseNow = { lunar: 0, solar: 0 };
+
+function updateScene() {
+  updateOrbitTilt();
+  const d = state.day, R = S.orbitR, mr = S.moonR;
+  const pos = moonPos(d, R), mHat = pos.clone().normalize();
+
+  // Tidal locking: the near side always faces the Earth
+  moon.position.copy(pos);
+  moon.rotation.set(0, 0, orbitAngle(d) + Math.PI);
+  moon.material.emissiveIntensity = 0.008 + 0.03 * (1 - litFraction(d));   // earthshine
+  if (moonLocator) moonLocator.position.copy(pos);
+
+  earth.rotation.z = state.spin ? 2 * Math.PI * (d % 1) : 0;
+
+  const fromMoon = state.viewFrom === "moon";
+  // Which objects the inset camera may see
+  setLayers(earth, ORBIT, ...(fromMoon ? [SKY] : []));
+  setLayers(earthExtras, ORBIT);
+  setLayers(moon, ORBIT, ...(fromMoon ? [] : [SKY]));
+
+  let eye, target, targetR, up, dot, ringC, ringR;
+  if (!fromMoon) {
+    // Observer at OBSERVER_LAT when the Moon is highest in their sky; "up" is overhead
+    const lat = (state.southern ? -OBSERVER_LAT : OBSERVER_LAT) * Math.PI / 180;
+    up = mHat.clone().multiplyScalar(Math.cos(lat)).addScaledVector(Z, Math.sin(lat)).normalize();
+    eye = up.clone().multiplyScalar(1.001);
+    target = pos; targetR = mr; dot = up.clone().multiplyScalar(1.04);
+    ringC = pos; ringR = mr * 1.03;
+  } else {
+    // Observer in the middle of the Moon's near side, Moon's north at the top
+    eye = pos.clone().addScaledVector(mHat, -mr * 1.001);
+    target = new THREE.Vector3(); targetR = 1; up = Z.clone();
+    dot = pos.clone().addScaledVector(mHat, -mr * 1.15);
+    ringC = new THREE.Vector3(); ringR = 1.03;
+  }
+  observer.position.copy(dot);
+  const start = fromMoon ? pos.clone().addScaledVector(mHat, -mr) : eye;
+  setLinePoints(sight, [start, target.clone().addScaledVector(target.clone().sub(eye).normalize(), -targetR)]);
+  const ringU = new THREE.Vector3(-mHat.y, mHat.x, 0).normalize(), ringV = mHat.clone().cross(ringU);
+  setLinePoints(halfRing, circle(ringC, ringU, ringV, ringR), true);
+  halfRing.visible = state.ring;
+
+  // Inset camera
+  const view = target.clone().sub(eye).normalize(), dist = target.distanceTo(eye);
+  targetSize = 2 * Math.asin(targetR / dist) * 180 / Math.PI;
+  moonSize = 2 * Math.asin(mr / pos.length()) * 180 / Math.PI;
+  const a = aspectOf(skyEl), tanR = Math.tan(Math.asin(targetR / dist)) / 0.5;   // target fills half the inset
+  skyCam.fov = 2 * Math.atan(tanR * Math.max(1, 1 / a)) * 180 / Math.PI;
+  skyCam.aspect = a;
+  skyCam.near = Math.max(0.0005, dist - 4 * targetR);
+  skyCam.far = 1e6;
+  skyCam.position.copy(eye); skyCam.up.copy(up); skyCam.lookAt(target);
+  skyCam.updateProjectionMatrix();
+
+  // Solar eclipse: the corona sits just behind the Moon (only drawn in the view from Earth)
+  corona.position.copy(pos).addScaledVector(view, mr * 1.5);
+  corona.scale.setScalar(mr * 5.2 * (dist + mr * 1.5) / dist);
+  eclipseNow = updateEclipse();
+
+  // Sun arrow drawn flat in the picture, beside the target
+  const sUp = up.clone().addScaledVector(view, -up.dot(view)).normalize();
+  const sRight = view.clone().cross(sUp);
+  const s2 = [SUN_DIR.dot(sRight), SUN_DIR.dot(sUp)];
+  litSide = s2[0] > 0 ? "right" : "left";
+  const note = document.getElementById("skyNote");
+  if (Math.hypot(...s2) > 0.2) {
+    const d3 = sRight.clone().multiplyScalar(s2[0]).addScaledVector(sUp, s2[1]).normalize();
+    sunArrow.visible = true;
+    sunArrow.position.copy(target).addScaledVector(d3, targetR * 1.18);
+    sunArrow.quaternion.setFromUnitVectors(Y, d3);
+    sunArrow.scale.setScalar(targetR * 0.45);
+    note.textContent = "Arrow: towards the Sun";
+  } else {
+    sunArrow.visible = false;
+    const towards = SUN_DIR.dot(view) > 0;
+    note.textContent = towards ? `Sun is behind the ${fromMoon ? "Earth" : "Moon"} (lost in its glare)`
+                               : `Sun is behind you (other side of the ${fromMoon ? "Moon" : "Earth"})`;
+  }
+  document.getElementById("skyTitle").textContent = fromMoon
+    ? (S.real ? "Earth from the Moon (zoomed in)" : "Earth from the Moon")
+    : (S.real ? "From Earth (zoomed in)" : "What we see from Earth");
+}
+
+function updatePanel() {
+  const d = state.day, frac = litFraction(d), half = SYNODIC / 2;
+  let [name, , desc] = PHASES[phaseIndex(d)];
+  const trend = d > 0.3 && d < half - 0.3 ? "growing (waxing)" : d > half + 0.3 && d < SYNODIC - 0.3 ? "shrinking (waning)" : "";
+  const hemi = state.southern ? "Southern" : "Northern";
+  const rise = 6 + 24 * d / SYNODIC;
+  let html;
+  if (state.viewFrom === "earth") {
+    html = `<p><b>Day</b> ${d.toFixed(1)} of ${SYNODIC}<br><b>Face lit:</b> ${Math.round(frac * 100)}% ${trend}`;
+    if (frac > 0.02 && frac < 0.98) html += `<br><b>Lit side:</b> ${litSide} (as seen from the ${hemi} Hemisphere)`;
+    html += `<br><b>Rises</b> about ${clock(rise)}, <b>sets</b> about ${clock(rise + 12)}</p><p>${desc}</p>
+      <p><b>Moon's size in the sky:</b> ${targetSize.toFixed(2)}° ${state.real ? "(real: about the width of your little fingernail at arm's length)" : "(enlarged; really about 0.5°)"}</p>
+      <p class="muted">The view at the top of this panel is from a person at latitude ${OBSERVER_LAT}°${state.southern ? "S" : "N"} (red dot), when the Moon is highest in their sky.</p>`;
+  } else {
+    let earthName = PHASES[(phaseIndex(d) + 4) % 8][0].replace("Moon", "Earth");
+    if (!earthName.includes("Earth")) earthName += " Earth";
+    html = `<p><b>Day</b> ${d.toFixed(1)} of ${SYNODIC}<br><b>Seen from the Moon:</b> ${earthName}
+      <br><b>Earth lit:</b> ${Math.round((1 - frac) * 100)}% (Moon lit: ${Math.round(frac * 100)}%)`;
+    if (1 - frac > 0.02 && 1 - frac < 0.98) html += `<br><b>Lit side:</b> ${litSide}`;
+    html += `</p><p>The Earth goes through phases too, but always the <i>opposite</i> of the Moon's: when we see a New Moon, the Moon sees a Full Earth. Together the two lit parts always add up to one whole face.</p>
+      <p>Because the Moon keeps the same face towards us, the Earth never rises or sets for someone on the near side. It hangs in the same spot in their sky while its phases (and its spinning continents) change.</p>
+      <p><b>Earth's size in the Moon's sky:</b> ${targetSize.toFixed(2)}° ${state.real ? "(almost 4 times wider than the Moon looks from Earth)" : "(enlarged; really about 1.9°)"}</p>
+      <p class="muted">The view at the top of this panel is from the middle of the Moon's near side (red dot), Moon's north at the top.</p>`;
+    name = `${name} / ${earthName}`;
+  }
+  if (state.tilt) html += eclipseHtml();
+  document.getElementById("phaseName").textContent = name;
+  document.getElementById("info").innerHTML = html;
+  document.getElementById("dayLabel").textContent = `Day ${d.toFixed(1)} / ${SYNODIC}`;
+  document.getElementById("scaleNote").textContent = state.real
+    ? "Real scale. The Moon is 60 Earth radii away and about a quarter of Earth's width. The view from Earth is zoomed in so the phase is visible."
+    : "Not to scale. The real Moon is ~60 Earth radii away and a quarter of Earth's width. Tick 'Real scale' to see it.";
+}
+
+// What the tilt means for eclipses this month
+function eclipseHtml() {
+  const e = eclipseInfo(state.day, state.node), b = Math.abs(e.beta);
+  const dir = e.beta >= 0 ? "north" : "south", opp = e.beta >= 0 ? "south" : "north";
+  const solar = b < SOLAR_LIMIT, lunar = b < LUNAR_LIMIT, total = b < TOTAL_LIMIT;
+  let now = "";
+  if (eclipseNow.lunar > 0) now = `<p><b class="yes">Lunar eclipse now!</b> The Moon is in the Earth's shadow. It turns a coppery red because the Earth's atmosphere bends a little red sunlight into the shadow.</p>`;
+  else if (eclipseNow.solar > 0) now = `<p><b class="yes">Solar eclipse now!</b> The Moon is passing in front of the Sun. Somewhere on Earth people see the Sun covered, with its glowing corona around the Moon.</p>`;
+  // when is the next eclipse season? (the line of nodes within ~17° of the Sun direction)
+  const lim = Math.asin(Math.sin(SOLAR_LIMIT * Math.PI / 180) / Math.sin(INCL * Math.PI / 180)) * 180 / Math.PI;
+  const nm = ((state.node % 180) + 180) % 180, inSeason = nm <= lim || nm >= 180 - lim;
+  const months = (nm - lim) / NODE_RATE / SYNODIC;
+  return `<div class="eclipse">${now}
+    <b>This month</b> the New Moon passes ${b.toFixed(1)}° ${dir} of the Sun: ${solar ? `<b class="yes">a solar eclipse</b>` : "no solar eclipse"} (it must pass within about ${SOLAR_LIMIT}°).
+    The Full Moon passes ${b.toFixed(1)}° ${opp} of the middle of the Earth's shadow: ${lunar ? `<b class="yes">a ${total ? "total" : "partial"} lunar eclipse</b>` : "no lunar eclipse"} (within about ${LUNAR_LIMIT}°).
+    <br>${inSeason ? "<b>Eclipse season now:</b> the tilt points almost at the Sun." : `Next eclipse season in about ${Math.max(1, Math.round(months))} month${Math.round(months) > 1 ? "s" : ""}.`}
+    ${S.real ? "" : `<br><span class="muted">The tilt is drawn 3 times too big so you can see it; the eclipse sums use the real 5.1°.</span>`}</div>`;
+}
+
+function refresh() { VR.skyDirty = true; VR.panelDirty = true; refreshInner(); }
+// During VR playback: move things every frame, but let the floating screen, the panel
+// text and the (hidden) page panels catch up only a few times a second.
+let lastPageUpdate = 0;
+function refreshLight() {
+  updateScene();
+  VR.skyDirty = true;                         // throttled in vrFrame()
+  const t = performance.now();
+  if (t - lastPageUpdate > 250) {             // 4x a second is plenty for text
+    lastPageUpdate = t;
+    VR.panelDirty = true;
+    updatePanel(); updateJumpButtons();
+    slider.value = Math.round(state.day * 100);
+  }
+}
+function refreshInner() { updateScene(); updatePanel(); if (typeof jumpButtons !== "undefined") updateJumpButtons(); dirty = true; }
+
+// =====================================================================================
+// Rendering: one canvas, two viewports
+// =====================================================================================
+const tmp = new THREE.Vector3();
+const eyePos = new THREE.Vector3();
+function faceSunGlow(cam) {
+  cam.updateMatrixWorld();
+  sunGroup.userData.glow.lookAt(eyePos.setFromMatrixPosition(cam.matrixWorld));
+}
+function placeSkyDome(cam, gain) {
+  // keep the starry backdrop centred on this camera, inside its near/far range
+  skyDome.position.copy(cam.position);
+  skyDome.scale.setScalar(Math.min(cam.far * 0.5, Math.max(cam.near * 4, 1)));
+  skyDome.userData.stars.material.uniforms.gain.value = gain;
+}
+function renderSky() {
+  const w = skyCanvas.clientWidth, h = skyCanvas.clientHeight;
+  if (w < 2 || h < 2) return;
+  const pr = skyRenderer.getPixelRatio();
+  if (skyCanvas.width !== Math.floor(w * pr) || skyCanvas.height !== Math.floor(h * pr)) skyRenderer.setSize(w, h, false);
+  skyCam.aspect = w / h; skyCam.updateProjectionMatrix();
+  placeSkyDome(skyCam, 1.1);
+  skyRenderer.render(scene, skyCam);
+}
+function renderView(el, cam, clear) {
+  const c = canvas.getBoundingClientRect(), v = el.getBoundingClientRect(), H = canvas.clientHeight;
+  const r = { left: v.left - c.left, top: v.top - c.top, width: v.width, height: v.height };
+  r.bottom = r.top + r.height;
+  if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.top > H) return null;
+  const x = r.left, y = H - r.bottom;
+  renderer.setViewport(x, y, r.width, r.height);
+  renderer.setScissor(x, y, r.width, r.height);
+  renderer.setClearColor(clear);
+  cam.aspect = r.width / r.height; cam.updateProjectionMatrix();
+  lineMaterials.forEach(m => m.resolution.set(r.width, r.height));
+  if (cam === orbitCam) {
+    // near/far limits that fit this view: close enough for the Earth's surface detail,
+    // far enough to include the Sun (23,000 Earth radii away at real scale)
+    const dist = orbitCam.position.distanceTo(controls.target);
+    orbitCam.near = Math.max(0.002, dist * 0.003);
+    orbitCam.far = dist * 4 + (S.real ? Math.abs(S.sunC[0]) + 4 * S.sunR : 80);
+    orbitCam.updateProjectionMatrix();
+  }
+  placeSkyDome(cam, 1.45);
+  faceSunGlow(cam);
+  renderer.render(scene, cam);
+  return r;
+}
+function renderAll() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.floor(w * renderer.getPixelRatio()) || canvas.height !== Math.floor(h * renderer.getPixelRatio()))
+    renderer.setSize(w, h, false);
+  renderer.setScissor(0, 0, w, h); renderer.setClearColor(0x05060a); renderer.clear();
+  const r = renderView(orbitEl, orbitCam, 0x04050a);
+  renderSky();
+  // place the orbit-view labels
+  if (r) for (const L of labels) {
+    tmp.copy(L.pos);
+    if (L.xf) L.xf(tmp);
+    tmp.project(orbitCam);
+    const off = L.zoomHide || L.tiltHide || (L.when && !L.when()) || tmp.z > 1 || Math.abs(tmp.x) > 1.2 || Math.abs(tmp.y) > 1.2;
+    L.el.style.display = off ? "none" : "";
+    if (!off) { L.el.style.left = `${(tmp.x + 1) / 2 * r.width}px`; L.el.style.top = `${(1 - tmp.y) / 2 * r.height}px`; }
+  }
+}
+
+// =====================================================================================
+// Playback, zoom animation and the main loop
+// =====================================================================================
+const slider = document.getElementById("slider"), fpsBox = document.getElementById("fpsBox"),
+      speedBox = document.getElementById("speedBox"), playBtn = document.getElementById("playBtn"),
+      loopBtn = document.getElementById("loopBtn"), zoomBtn = document.getElementById("zoomBtn");
+function setDay(d, wrap = true, light = false) {
+  state.day = wrap ? ((d % SYNODIC) + SYNODIC) % SYNODIC : Math.min(SYNODIC, Math.max(0, d));
+  if (light) { refreshLight(); return; }
+  slider.value = Math.round(state.day * 100);
+  refresh();
+}
+function setPlaying(p) {
+  state.playing = p;
+  if (p && !state.loop && state.day >= SYNODIC - 1e-3) setDay(0);
+  document.getElementById("playIcon").innerHTML = p ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>' : '<path d="M7 5v14l12-7z"/>';
+  playBtn.setAttribute("aria-label", p ? "Pause" : "Play");
+  lastStep = performance.now();
+}
+// While the animation plays, the line of nodes turns too (clockwise, ~1° a day). Jumping,
+// stepping and dragging the Moon leave it where it is, so the slider stays where you put it.
+function advanceNodes(days) {
+  if (!state.tilt) return;
+  state.node = ((state.node - days * NODE_RATE) % 360 + 360) % 360;
+  nodeSync();
+}
+function step(n) { setPlaying(false); setDay(Math.round(state.day) + n); }
+
+let lastStep = performance.now(), zoomAnim = null, lastLayout = "";
+function loop(now) {
+  if (state.playing && renderer.xr.isPresenting) {
+    // In VR the Moon moves a little on EVERY headset frame (72-90 a second), timed by the
+    // real elapsed time; stepping at the FPS setting looks jerky inside a headset.
+    const dt = Math.min(0.1, Math.max(0, (now - lastStep) / 1000));
+    lastStep = now;
+    const next = state.day + dt * Math.max(0.1, +speedBox.value || 2);
+    advanceNodes(next - state.day);
+    if (next >= SYNODIC && !state.loop) { setDay(SYNODIC, false); setPlaying(false); }
+    else setDay(next, true, true);
+  } else if (state.playing) {
+    const fps = Math.min(60, Math.max(1, +fpsBox.value || 30)), interval = 1000 / fps;
+    if (now - lastStep >= interval) {
+      const n = Math.min(5, Math.floor((now - lastStep) / interval));
+      lastStep += n * interval;
+      const next = state.day + n * (Math.max(0.1, +speedBox.value || 2) / fps);
+      advanceNodes(next - state.day);
+      if (next >= SYNODIC && !state.loop) { setDay(SYNODIC, false); setPlaying(false); }
+      else setDay(next);
+    }
+  }
+  if (zoomAnim) {
+    const u = Math.min(1, (now - zoomAnim.t0) / 2000), e = 0.5 - 0.5 * Math.cos(Math.PI * u);
+    frameOrbit(zoomAnim.from + (zoomAnim.to - zoomAnim.from) * e);
+    if (u >= 1) zoomAnim = null;
+  }
+  // Redraw whenever either view has moved or changed size since the last frame, as well
+  // as when something in the scene changed. (Layout can shift without a resize event.)
+  const key = [orbitEl, skyEl].map(el => { const r = el.getBoundingClientRect();
+    return `${r.left},${r.top},${r.width},${r.height}`; }).join("|");
+  if (key !== lastLayout) { lastLayout = key; if (!follow) frameOrbit(); updateScene(); dirty = true; }
+  updateFollow(now);
+  updateSwing(now);
+  updateQuizGlide(now);
+  if (renderer.xr.isPresenting) vrFrame(now);
+  else if (dirty) { dirty = false; renderAll(); }
+}
+
+function setZoomLabel(t) { zoomBtn.querySelector(".lbl").textContent = t; }
+function toggleZoom() {
+  if (!state.real) return;
+  stopFollow();
+  const to = zoomT > 0.5 ? 0 : 1;
+  zoomAnim = { from: zoomT, to, t0: performance.now() };
+  setZoomLabel(to === 1 ? "Zoom back in" : "Zoom to the Sun");
+}
+function resetView() { stopFollow(); zoomAnim = null; setZoomLabel("Zoom to the Sun"); frameOrbit(0); }
+
+// ---- Double-click the Sun, Earth or Moon to centre the orbit view on it ----------------
+// The camera glides over (keeping its viewing angle) and then follows the body, so the
+// Moon stays centred while the animation plays.
+let follow = null, focusAnim = null;
+const followNote = document.getElementById("followNote");
+const bodies = () => [
+  { name: "Sun", obj: sunGroup, r: S.sunR },
+  { name: "Earth", obj: earth, r: 1 },
+  { name: "Moon", obj: moon, r: S.moonR },
+];
+function pickBody(clientX, clientY) {
+  const rect = orbitEl.getBoundingClientRect();
+  const mx = clientX - rect.left, my = clientY - rect.top;
+  orbitCam.aspect = rect.width / rect.height; orbitCam.updateProjectionMatrix(); orbitCam.updateMatrixWorld();
+  const right = new THREE.Vector3().setFromMatrixColumn(orbitCam.matrixWorld, 0);
+  let best = null, bestScore = Infinity;
+  for (const b of bodies()) {
+    const c = b.obj.getWorldPosition(new THREE.Vector3());
+    const p = c.clone().project(orbitCam);
+    if (p.z > 1) continue;                                   // behind the camera
+    const edge = c.clone().addScaledVector(right, b.r).project(orbitCam);
+    const sx = (p.x + 1) / 2 * rect.width, sy = (1 - p.y) / 2 * rect.height;
+    const rad = Math.hypot((edge.x - p.x) / 2 * rect.width, (edge.y - p.y) / 2 * rect.height);
+    const d = Math.hypot(mx - sx, my - sy);
+    // Generous target: tiny bodies (real scale) can still be hit within ~22 pixels
+    if (d <= Math.max(rad, 22) && d - rad < bestScore) { best = b; bestScore = d - rad; }
+  }
+  return best;
+}
+function focusOn(name) {
+  const b = bodies().find(x => x.name === name);
+  if (!b) return;
+  zoomAnim = null;
+  follow = b;
+  controls.zoomToCursor = false;                 // zoom towards the body, not the mouse
+  const fromTarget = controls.target.clone();
+  const fromDist = orbitCam.position.distanceTo(fromTarget);
+  const dir = orbitCam.position.clone().sub(fromTarget).normalize();
+  const toDist = b.r / Math.tan(orbitCam.fov * Math.PI / 360) * 2.6;   // body fills ~40% of the height
+  focusAnim = { fromTarget, fromDist, toDist, dir, t0: performance.now() };
+  followNote.textContent = `Centred on the ${name}. Double-click empty space or press Esc to go back.`;
+}
+function stopFollow() {
+  follow = null; focusAnim = null; followNote.textContent = "";
+  controls.zoomToCursor = true;
+}
+function updateFollow(now) {
+  if (!follow) return;
+  const goal = follow.obj.getWorldPosition(new THREE.Vector3());
+  if (focusAnim) {
+    const a = focusAnim, u = Math.min(1, (now - a.t0) / 900), e = 0.5 - 0.5 * Math.cos(Math.PI * u);
+    const target = a.fromTarget.clone().lerp(goal, e);
+    const dist = a.fromDist * (a.toDist / a.fromDist) ** e;
+    orbitCam.position.copy(target).addScaledVector(a.dir, dist);
+    controls.target.copy(target);
+    controls.update();
+    if (u >= 1) focusAnim = null;
+    dirty = true;
+  } else if (goal.distanceToSquared(controls.target) > 1e-12) {
+    // keep following: shift the camera by however far the body has moved
+    orbitCam.position.add(goal.clone().sub(controls.target));
+    controls.target.copy(goal);
+    controls.update();
+    dirty = true;
+  }
+}
+// ---- Grab the Moon and drag it around its orbit ---------------------------------------
+// Pointer events on the Moon are taken before OrbitControls sees them (capture phase),
+// so dragging the Moon moves it, while dragging anywhere else still rotates the view.
+const ray = new THREE.Raycaster(), orbitPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hit = new THREE.Vector3();
+let draggingMoon = false, wasPlaying = false;
+function dayFromPointer(clientX, clientY) {
+  const rect = orbitEl.getBoundingClientRect();
+  const ndc = new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1);
+  ray.setFromCamera(ndc, orbitCam);
+  if (!ray.ray.intersectPlane(orbitPlane, hit)) return null;        // looking parallel to the orbit
+  hit.applyQuaternion(orbitQinv);                                     // undo the orbit's tilt
+  const a = Math.atan2(hit.y, hit.x);                                 // angle around the Earth
+  return ((a - Math.PI) / (2 * Math.PI) * SYNODIC % SYNODIC + SYNODIC) % SYNODIC;
+}
+orbitEl.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  const b = pickBody(e.clientX, e.clientY);
+  if (!b || b.name !== "Moon") return;
+  if (quiz.active && (quiz.type !== "where" || quiz.answered)) return;   // the Moon stays put
+  e.stopImmediatePropagation(); e.preventDefault();
+  draggingMoon = true; wasPlaying = state.playing; setPlaying(false);
+  controls.enabled = false;
+  orbitEl.setPointerCapture(e.pointerId);
+  orbitEl.style.cursor = "grabbing";
+}, { capture: true });
+orbitEl.addEventListener("pointermove", e => {
+  if (draggingMoon) {
+    const d = dayFromPointer(e.clientX, e.clientY);
+    if (d !== null) { setDay(d); quiz.moved = true; }
+    e.stopImmediatePropagation();
+    return;
+  }
+  if (e.buttons === 0) {             // just hovering: show that the Moon can be grabbed
+    const b = pickBody(e.clientX, e.clientY);
+    orbitEl.style.cursor = b && b.name === "Moon" ? "pointer" : "";
+  }
+}, { capture: true });
+const endMoonDrag = e => {
+  if (!draggingMoon) return;
+  draggingMoon = false; controls.enabled = true;
+  orbitEl.releasePointerCapture?.(e.pointerId);
+  orbitEl.style.cursor = "";
+  if (wasPlaying) setPlaying(true);
+  e.stopImmediatePropagation();
+  quizCheckWhere();
+};
+orbitEl.addEventListener("pointerup", endMoonDrag, { capture: true });
+orbitEl.addEventListener("pointercancel", endMoonDrag, { capture: true });
+
+orbitEl.addEventListener("dblclick", e => {
+  const b = pickBody(e.clientX, e.clientY);
+  if (b) focusOn(b.name); else if (follow) resetView();
+});
+
+// ---- wiring ---------------------------------------------------------------------------
+// Little phase pictures for the buttons. frac = fraction lit; litRight = which side is lit
+// (waxing is lit on the right in the Northern Hemisphere, on the left in the Southern).
+function phaseGlyph(frac, litRight, size = 28) {
+  let lit = "";
+  if (frac > 0.97) lit = `<circle cx="12" cy="12" r="10" fill="#f1ede0"/>`;
+  else if (frac > 0.03) {
+    const rx = (Math.abs(2 * frac - 1) * 10).toFixed(2), sweep = frac > 0.5 ? 1 : 0;
+    lit = `<path d="M12 2A10 10 0 0 1 12 22A${rx} 10 0 0 ${sweep} 12 2Z" fill="#f1ede0"/>`;
+  }
+  const flip = litRight ? "" : ` transform="matrix(-1 0 0 1 24 0)"`;
+  return `<svg class="glyph" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">` +
+         `<circle cx="12" cy="12" r="10" fill="#323848" stroke="#606a7d" stroke-width=".8"/><g${flip}>${lit}</g></svg>`;
+}
+const jump = document.getElementById("jump");
+const jumpButtons = PHASES.map(([name, day], i) => {
+  const b = document.createElement("button");
+  b.title = `${name} (key ${i + 1})`;
+  b.setAttribute("aria-label", name);
+  b.onclick = () => {
+    if (quiz.active) { quizAnswerWhich(i); return; }
+    setPlaying(false); setDay(day);
+  };
+  jump.appendChild(b);
+  return b;
+});
+let glyphHemi = null;
+function updateJumpButtons() {
+  if (glyphHemi !== state.southern) {        // redraw the pictures when the hemisphere changes
+    glyphHemi = state.southern;
+    PHASES.forEach(([name], i) => {
+      const frac = (1 - Math.cos(2 * Math.PI * i / 8)) / 2, litRight = (i < 4) !== state.southern;
+      jumpButtons[i].innerHTML = `<span class="num">${i + 1}</span>${phaseGlyph(frac, litRight)}` +
+        `<span>${name.replace(" ", "<br>")}</span>`;
+    });
+    document.getElementById("segMoonIcon").outerHTML =
+      `<span id="segMoonIcon">${phaseGlyph(0.78, !state.southern, 18)}</span>`;
+  }
+  // during a quiz question nothing is highlighted (that would give it away)
+  const idx = !quiz.active ? phaseIndex(state.day) : quiz.answered ? quiz.target : -1;
+  jumpButtons.forEach((b, i) => {
+    b.classList.toggle("active", i === idx); b.setAttribute("aria-pressed", i === idx);
+    b.disabled = quiz.active && (quiz.type !== "which" || quiz.answered) && i !== idx;
+  });
+}
+const ticks = document.getElementById("ticks");
+for (let i = 0; i <= 8; i++) { const t = document.createElement("i"); t.style.left = `${i / 8 * 100}%`; ticks.appendChild(t); }
+
+slider.oninput = () => setDay(slider.value / 100, false);
+playBtn.onclick = () => setPlaying(!state.playing);
+document.getElementById("restartBtn").onclick = () => setDay(0);
+document.getElementById("backBtn").onclick = () => step(-1);
+document.getElementById("fwdBtn").onclick = () => step(1);
+loopBtn.onclick = () => { state.loop = !state.loop; loopBtn.setAttribute("aria-pressed", state.loop); };
+zoomBtn.onclick = toggleZoom;
+document.getElementById("resetBtn").onclick = resetView;
+
+const spinBox = document.getElementById("spinBox"), ringBox = document.getElementById("ringBox"),
+      scaleBox = document.getElementById("scaleBox");
+spinBox.onchange = () => { state.spin = spinBox.checked; refresh(); };
+ringBox.onchange = () => { state.ring = ringBox.checked; refresh(); };
+scaleBox.onchange = () => {
+  state.real = scaleBox.checked; zoomAnim = null; stopFollow();
+  buildScale(state.real);
+  zoomBtn.disabled = !state.real; setZoomLabel("Zoom to the Sun");
+  refresh();
+};
+const tiltBox = document.getElementById("tiltBox"), nodeSlider = document.getElementById("nodeSlider");
+function nodeSync() {
+  nodeSlider.value = Math.round(state.node) % 360;
+  const a = Math.round(state.node) % 360, off = Math.min(a % 180, 180 - a % 180);
+  document.getElementById("nodeVal").textContent = off < 17 ? `${a}° · eclipse season` : `${a}°`;
+}
+tiltBox.onchange = () => {
+  state.tilt = tiltBox.checked;
+  document.getElementById("tiltExtra").hidden = !state.tilt;
+  nodeSync(); refresh(); updateCaption();
+};
+nodeSlider.oninput = () => { state.node = +nodeSlider.value; nodeSync(); refresh(); };
+document.querySelectorAll("input[name=hemi]").forEach(r => r.onchange = () => {
+  state.southern = r.value === "south" && r.checked;
+  refresh(); followHemisphere();
+  if (quiz.active && quiz.type === "where" && !quiz.answered) quizSnapshot();
+});
+document.querySelectorAll("input[name=viewFrom]").forEach(r => r.onchange = () => {
+  state.viewFrom = document.querySelector("input[name=viewFrom]:checked").value;
+  const fromMoon = state.viewFrom === "moon";
+  document.querySelectorAll(".hemi").forEach(l => { l.classList.toggle("disabled", fromMoon); l.querySelector("input").disabled = fromMoon; });
+  document.getElementById("ringText").innerHTML = fromMoon
+    ? "The half facing the Moon<small>the part of Earth seen from the Moon</small>"
+    : "The half facing Earth<small>the part of the Moon we can see</small>";
+  refresh(); followHemisphere();
+});
+const clickRadio = sel => { const r = document.querySelector(sel); if (!r.disabled) { r.checked = true; r.dispatchEvent(new Event("change")); } };
+
+window.addEventListener("keydown", e => {
+  if (e.target.matches("input[type=number]") || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key;
+  const act = {
+    " ": () => setPlaying(!state.playing), ArrowLeft: () => step(-1), ArrowRight: () => step(1),
+    Home: () => setDay(0), l: () => loopBtn.click(), h: () => clickRadio(`input[name=hemi][value=${state.southern ? "north" : "south"}]`),
+    e: () => spinBox.click(), c: () => ringBox.click(), r: () => scaleBox.click(), z: toggleZoom, t: resetView,
+    o: () => tiltBox.click(), q: () => quizBtn.click(),
+    Escape: resetView,
+    v: () => clickRadio(`input[name=viewFrom][value=${state.viewFrom === "earth" ? "moon" : "earth"}]`),
+  }[k.length === 1 ? k.toLowerCase() : k];
+  const n = parseInt(k, 10);
+  if (quiz.active) {
+    // only answers, the quiz key, and keys that don't move the Moon
+    if (n >= 1 && n <= 8) { quizAnswerWhich(n - 1); e.preventDefault(); return; }
+    if (k === "Enter" && quiz.answered) { quizNext(); e.preventDefault(); return; }
+    if (!"qhecot".includes(k.toLowerCase()) && k !== "Escape") return;
+  }
+  if (act) { act(); e.preventDefault(); }
+  else if (n >= 1 && n <= 8) { setPlaying(false); setDay(PHASES[n - 1][1]); e.preventDefault(); }
+});
+
+// =====================================================================================
+// Quiz. Two kinds of question, picked at random:
+//   "where": the view from Earth shows a phase; drag the Moon to where it must be.
+//   "which": the Moon is somewhere on its orbit; pick the phase we'd see.
+// While a question is open, anything that would give the answer away is hidden: the
+// phase names around the orbit, the phase name and day, and the live view from Earth.
+// =====================================================================================
+const quiz = { active: false, type: "where", target: 0, last: -1, answered: false, right: false,
+               given: null, moved: false, score: 0, total: 0, glide: null, feedback: "" };
+const quizBtn = document.getElementById("quizBtn"), quizBox = document.getElementById("quizBox"),
+      quizCover = document.getElementById("quizCover"), quizImg = document.getElementById("quizImg");
+const hemiName = () => state.southern ? "Southern" : "Northern";
+const article = name => /^[AEIOU]/.test(name) ? "an" : "a";
+
+function quizStart() {
+  if (quiz.active) return;
+  setPlaying(false); stopFollow(); zoomAnim = null;
+  if (state.real) scaleBox.click();                       // the quiz uses the not-to-scale model
+  if (state.viewFrom !== "earth") clickRadio("input[name=viewFrom][value=earth]");
+  Object.assign(quiz, { active: true, score: 0, total: 0, last: -1 });
+  document.body.classList.add("quizzing");
+  scaleBox.disabled = true;
+  document.querySelectorAll("input[name=viewFrom]").forEach(r => (r.disabled = true));
+  quizBtn.querySelector(".lbl").textContent = "End quiz";
+  quizNext();
+}
+function quizEnd() {
+  if (!quiz.active) return;
+  quiz.active = false; quiz.glide = null;
+  document.body.classList.remove("quizzing");
+  scaleBox.disabled = false;
+  document.querySelectorAll("input[name=viewFrom]").forEach(r => (r.disabled = false));
+  quizBtn.querySelector(".lbl").textContent = "Quiz me";
+  quizBox.hidden = true; quizCover.hidden = true;
+  jumpButtons.forEach(b => b.classList.remove("wrongPick"));
+  glyphHemi = null;
+  updateVrQuizLook();
+  refresh();
+}
+function quizNext() {
+  let t;
+  do t = Math.floor(Math.random() * 8); while (t === quiz.last);
+  Object.assign(quiz, { target: t, last: t, answered: false, right: false, given: null, moved: false, glide: null,
+                        type: Math.random() < 0.5 ? "where" : "which", feedback: "" });
+  jumpButtons.forEach(b => b.classList.remove("wrongPick"));
+  if (quiz.type === "where") {
+    // start the Moon between a quarter and three quarters of the way round from the answer
+    setDay(PHASES[t][1] + SYNODIC * (0.25 + 0.5 * Math.random()));
+    quizSnapshot();
+  } else {
+    setDay(PHASES[t][1]);
+  }
+  showQuiz();
+}
+// A still picture of the phase being asked about, for the view from Earth (page) or the
+// floating screen (VR), taken with the Moon briefly moved to the answer.
+function quizSnapshot() {
+  const keep = state.day, node = state.node;
+  state.day = PHASES[quiz.target][1]; updateScene();
+  if (VR.active) renderSkyToScreen();
+  else { renderSky(); quizImg.src = skyCanvas.toDataURL("image/png"); }
+  state.day = keep; state.node = node; updateScene();
+  dirty = true;
+}
+function quizQuestion() {
+  if (quiz.type === "where") return VR.active
+    ? `The screen shows the Moon from the ${hemiName()} Hemisphere. Grab the Moon and move it to where it must be in its orbit.`
+    : `The picture above shows the Moon as seen from the ${hemiName()} Hemisphere. Drag the Moon in the 3D view to where it must be in its orbit.`;
+  return VR.active
+    ? "Look where the Moon is in its orbit. Which phase would we see from Earth? Pick a phase button."
+    : `Look where the Moon is in the 3D view. Which phase would we see from the ${hemiName()} Hemisphere? Pick a phase button on the left.`;
+}
+function showQuiz() {
+  quizBox.hidden = false;
+  document.getElementById("qScore").textContent = `${quiz.score} / ${quiz.total}`;
+  document.getElementById("qText").textContent = quizQuestion();
+  const fb = document.getElementById("qFeedback");
+  fb.textContent = quiz.feedback; fb.className = quiz.answered ? (quiz.right ? "right" : "wrong") : "";
+  document.getElementById("qNext").hidden = !quiz.answered;
+  // cover the live view from Earth until the question is answered
+  quizCover.hidden = quiz.answered;
+  const where = quiz.type === "where";
+  quizImg.hidden = !where; document.getElementById("quizMark").hidden = where;
+  document.getElementById("quizCap").textContent = where ? "Where is the Moon?" : "What do we see from Earth?";
+  updateJumpButtons();
+  updateVrQuizLook();
+  VR.panelDirty = true;
+  // side-by-side layout: make sure the phase buttons (the answers) are in view
+  if (quiz.type === "which" && !quiz.answered && innerWidth > 980) jump.scrollIntoView({ block: "nearest" });
+}
+function quizMark(given) {
+  quiz.answered = true; quiz.given = given; quiz.right = given === quiz.target; quiz.total++;
+  if (quiz.right) quiz.score++;
+}
+function quizAnswerWhich(i) {
+  if (!quiz.active || quiz.type !== "which" || quiz.answered) return;
+  quizMark(i);
+  const name = PHASES[quiz.target][0];
+  if (!quiz.right) jumpButtons[i].classList.add("wrongPick");
+  quiz.feedback = quiz.right ? `Yes! From there the Moon looks like ${article(name)} ${name}.`
+    : `Not quite: that would be ${article(PHASES[i][0])} ${PHASES[i][0]}. Here the Moon is ${article(name)} ${name}; the view from Earth is uncovered now.`;
+  refresh(); showQuiz();
+}
+function quizCheckWhere() {
+  if (!quiz.active || quiz.type !== "where" || quiz.answered || !quiz.moved) return;
+  const given = phaseIndex(state.day);
+  quizMark(given);
+  const name = PHASES[quiz.target][0];
+  quiz.feedback = quiz.right ? `Yes! That's where the Moon is at ${name}.`
+    : `Not quite: there it would look like ${article(PHASES[given][0])} ${PHASES[given][0]}. Watch where ${name} is.`;
+  // glide the Moon to exactly the right place (the shorter way round)
+  let to = PHASES[quiz.target][1], from = state.day;
+  if (to - from > SYNODIC / 2) to -= SYNODIC; else if (from - to > SYNODIC / 2) to += SYNODIC;
+  quiz.glide = { from, to, t0: performance.now() };
+  showQuiz();
+}
+function updateQuizGlide(now) {
+  const g = quiz.glide;
+  if (!g) return;
+  const u = Math.min(1, (now - g.t0) / (reducedMotion() ? 1 : 900)), e = 0.5 - 0.5 * Math.cos(Math.PI * u);
+  setDay(g.from + (g.to - g.from) * e, true, VR.active);
+  if (u >= 1) { quiz.glide = null; refresh(); }
+}
+quizBtn.onclick = () => (quiz.active ? quizEnd() : quizStart());
+document.getElementById("qNext").onclick = quizNext;
+document.getElementById("qEnd").onclick = quizEnd;
+let resizeTimer;
+const onResize = () => { if (!follow) frameOrbit(); refresh(); };
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(onResize, 60); dirty = true; });
+// Views can change size without the window resizing (fonts loading, panel reflow): watch them too.
+new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(onResize, 30); dirty = true; })
+  .observe(document.querySelector("main"));
+window.addEventListener("scroll", () => (dirty = true), { passive: true });
+
+
+// =====================================================================================
+// VR mode (WebXR). The model floats at tabletop size in front of you with the stars all
+// around. Trigger: grab the Moon (or press a panel button). Grip: move the whole model.
+// Thumbstick left/right: scrub through the days; up/down: make the model bigger/smaller.
+// =====================================================================================
+let vrLabels = null;
+// Shown on the page and on the VR panel, so you can check which copy the browser loaded.
+const BUILD = "__BUILD__";
+const VR = { active: false, skyDirty: true, panelDirty: true, ctrls: [], drag: null, wasPlaying: false,
+             squeeze: null, hover: [null, null], lastNow: 0 };
+const WORLD_SCALE = 0.055, WORLD_POS = new THREE.Vector3(0, 1.05, -0.85);
+const vrGroup = new THREE.Group();           // things in the room: panel, screen, controller rays
+vrGroup.visible = false;
+scene.add(vrGroup);
+// The panel and the screen sit on a "rig" that Recenter moves in front of you. Its layout
+// is designed for eyes DESIGN_EYE metres up; the rig is raised or lowered to suit yours
+// (seated or standing). The controllers are not on it: they follow your real hands.
+const vrRig = new THREE.Group();
+vrGroup.add(vrRig);
+const DESIGN_EYE = 1.6;
+
+function textSprite(text, pos, height) {
+  const cv = document.createElement("canvas"), g = cv.getContext("2d"), fs = 56;
+  g.font = `600 ${fs}px system-ui, sans-serif`;
+  const w = Math.ceil(g.measureText(text).width) + 36;
+  cv.width = w; cv.height = fs + 30;
+  g.font = `600 ${fs}px system-ui, sans-serif`;
+  g.fillStyle = "rgba(47,91,138,0.92)";
+  g.beginPath(); g.roundRect(0, 0, w, cv.height, 14); g.fill();
+  g.fillStyle = "#fff"; g.textBaseline = "middle"; g.fillText(text, 18, cv.height / 2 + 2);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false }));
+  sp.scale.set(height * w / cv.height, height, 1);
+  sp.position.copy(pos);
+  return sp;
+}
+
+// ---- The floating control panel (drawn on a canvas, shown on a flat board) --------------
+const PANEL_W = 640, PANEL_H = 1040;
+const panelCv = document.createElement("canvas"); panelCv.width = PANEL_W; panelCv.height = PANEL_H;
+const panelTex = new THREE.CanvasTexture(panelCv); panelTex.colorSpace = THREE.SRGBColorSpace;
+const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.40 * PANEL_H / PANEL_W),
+                             new THREE.MeshBasicMaterial({ map: panelTex, transparent: true }));
+// low on the left, tilted back like a lectern, so it doesn't cover the Sun
+panel.position.set(-0.46, 0.84, -0.40); panel.rotation.set(-0.55, 0.6, 0, "YXZ");
+vrRig.add(panel);
+const SHORT = ["New", "Wax. Cresc.", "First Qtr", "Wax. Gibb.", "Full", "Wan. Gibb.", "Last Qtr", "Wan. Cresc."];
+const notQuiz = () => !quiz.active;
+const vrButtons = [
+  { id: "back", x: 30, y: 230, w: 180, h: 70, label: "◀  Day", show: notQuiz },
+  { id: "play", x: 230, y: 230, w: 180, h: 70, label: () => state.playing ? "❚❚  Pause" : "▶  Play", show: notQuiz },
+  { id: "fwd", x: 430, y: 230, w: 180, h: 70, label: "Day  ▶", show: notQuiz },
+  { id: "qnext", x: 30, y: 230, w: 580, h: 70, label: "Next question  ▶", show: () => quiz.active && quiz.answered },
+  ...PHASES.map((p, i) => ({ id: "ph" + i, x: 30 + (i % 4) * 147, y: 320 + Math.floor(i / 4) * 80, w: 137, h: 70,
+                             label: SHORT[i],
+                             active: () => !quiz.active ? phaseIndex(state.day) === i : quiz.answered && quiz.target === i,
+                             wrong: () => quiz.active && quiz.answered && !quiz.right && quiz.given === i })),
+  { id: "north", x: 30, y: 500, w: 285, h: 64, label: "Northern", active: () => !state.southern },
+  { id: "south", x: 325, y: 500, w: 285, h: 64, label: "Southern", active: () => state.southern },
+  { id: "spin", x: 30, y: 580, w: 285, h: 64, label: () => "Spin Earth: " + (state.spin ? "on" : "off"), active: () => state.spin },
+  { id: "ring", x: 325, y: 580, w: 285, h: 64, label: () => "Facing half: " + (state.ring ? "on" : "off"), active: () => state.ring },
+  { id: "tilt", x: 30, y: 660, w: 285, h: 64, label: () => "Tilted orbit: " + (state.tilt ? "on" : "off"), active: () => state.tilt },
+  { id: "quiz", x: 325, y: 660, w: 285, h: 64, label: () => quiz.active ? "End quiz" : "Quiz me", green: true },
+  { id: "quality", x: 30, y: 740, w: 285, h: 64, label: () => "Quality: " + QUALITY[VR.quality].name },
+  { id: "recenter", x: 325, y: 740, w: 285, h: 64, label: "Recenter" },
+  { id: "exit", x: 30, y: 820, w: 580, h: 64, label: "Exit VR" },
+];
+const shown = b => !b.show || b.show();
+function vrPress(id) {
+  if (quiz.active && id.startsWith("ph")) { quizAnswerWhich(+id.slice(2)); VR.panelDirty = true; return; }
+  if (id === "back") step(-1);
+  else if (id === "fwd") step(1);
+  else if (id === "play") setPlaying(!state.playing);
+  else if (id.startsWith("ph")) { setPlaying(false); setDay(PHASES[+id.slice(2)][1]); }
+  else if (id === "north" || id === "south") clickRadio(`input[name=hemi][value=${id}]`);
+  else if (id === "spin") spinBox.click();
+  else if (id === "ring") ringBox.click();
+  else if (id === "tilt") tiltBox.click();
+  else if (id === "quiz") quizBtn.click();
+  else if (id === "qnext") quizNext();
+  else if (id === "recenter") VR.recenter = true;
+  else if (id === "exit") renderer.xr.getSession()?.end();
+  else if (id === "quality") applyQuality((VR.quality + 1) % QUALITY.length);
+  VR.panelDirty = true;
+}
+function wrapText(g, text, x, y, maxW, lineH, maxLines = 4) {
+  const words = text.split(" "); let line = "", n = 0;
+  for (const w of words) {
+    const t = line ? line + " " + w : w;
+    if (g.measureText(t).width > maxW && line) { g.fillText(line, x, y + n * lineH); line = w; if (++n >= maxLines) return; }
+    else line = t;
+  }
+  if (line) g.fillText(line, x, y + n * lineH);
+}
+function drawPanel() {
+  const g = panelCv.getContext("2d"), d = state.day, frac = litFraction(d), W = PANEL_W, H = PANEL_H;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = "rgba(24,27,35,0.94)"; g.beginPath(); g.roundRect(0, 0, W, H, 28); g.fill();
+  g.strokeStyle = "#4a5366"; g.lineWidth = 3; g.stroke();
+  g.fillStyle = "#c8d2df"; g.font = "600 30px system-ui, sans-serif"; g.fillText("Phases of the Moon", 30, 52);
+  g.fillStyle = "#7f8a99"; g.font = "20px system-ui, sans-serif"; g.textAlign = "right";
+  g.fillText(BUILD, 610, 50); g.textAlign = "left";
+  if (quiz.active) {
+    // the quiz replaces the phase name and day (they'd give the answer away)
+    g.fillStyle = "#7ee08f"; g.font = "700 34px system-ui, sans-serif";
+    g.fillText(`Quiz · score ${quiz.score} / ${quiz.total}`, 30, 100);
+    g.font = "23px system-ui, sans-serif";
+    if (!quiz.answered) { g.fillStyle = "#e8edf3"; wrapText(g, quizQuestion(), 30, 136, 580, 29, 3); }
+    else { g.fillStyle = quiz.right ? "#7ee08f" : "#ff9f8a"; wrapText(g, quiz.feedback, 30, 136, 580, 29, 3); }
+  } else {
+    g.fillStyle = "#ffd400"; g.font = "700 48px system-ui, sans-serif"; g.fillText(PHASES[phaseIndex(d)][0], 30, 118);
+    g.fillStyle = "#e8edf3"; g.font = "28px system-ui, sans-serif";
+    const trend = d > 0.3 && d < SYNODIC / 2 - 0.3 ? " · waxing" : d > SYNODIC / 2 + 0.3 && d < SYNODIC - 0.3 ? " · waning" : "";
+    g.fillText(`Day ${d.toFixed(1)} of ${SYNODIC} · ${Math.round(frac * 100)}% lit${trend}`, 30, 165);
+    g.fillStyle = "#9aa6b5"; g.font = "24px system-ui, sans-serif";
+    let line = `View at right: from ${OBSERVER_LAT}°${state.southern ? "S" : "N"} on Earth`;
+    if (eclipseNow.lunar > 0) { line = "Lunar eclipse now!"; g.fillStyle = "#ff9f43"; }
+    else if (eclipseNow.solar > 0) { line = "Solar eclipse now!"; g.fillStyle = "#ff9f43"; }
+    g.fillText(line, 30, 202);
+  }
+  const hovered = new Set(VR.hover.filter(Boolean));
+  for (const b of vrButtons) {
+    if (!shown(b)) continue;
+    const on = b.active?.(), hot = hovered.has(b.id), bad = b.wrong?.();
+    g.fillStyle = on ? "#ffd400" : bad ? "#a8483c" : b.green ? (hot ? "#4a9160" : "#3d7a4f") : hot ? "#3b6fa6" : "#2f5b8a";
+    g.beginPath(); g.roundRect(b.x, b.y, b.w, b.h, 14); g.fill();
+    if (hot && on) { g.strokeStyle = "#fff"; g.lineWidth = 4; g.stroke(); }
+    g.fillStyle = on ? "#111" : "#fff";
+    const txt = typeof b.label === "function" ? b.label() : b.label;
+    g.font = `600 ${txt.length > 10 && b.w < 200 ? 24 : 28}px system-ui, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(txt, b.x + b.w / 2, b.y + b.h / 2 + 1);
+    g.textAlign = "left"; g.textBaseline = "alphabetic";
+  }
+  if (quiz.active && !quiz.answered && quiz.type === "where") {
+    g.fillStyle = "#9aa6b5"; g.font = "24px system-ui, sans-serif";
+    g.fillText("Aim at the Moon, hold the trigger, move it, let go.", 30, 272);
+  }
+  // live performance readout, to find what makes the headset miss frames
+  const st = VR.stats;
+  g.fillStyle = st.missed > 2 ? "#ff8a7a" : "#9ad0ff"; g.font = "600 22px system-ui, sans-serif";
+  g.fillText(`${st.fps.toFixed(0)} fps · ${st.missed} missed / s · code ${st.cpu.toFixed(1)} ms/frame`, 30, 920);
+  g.fillStyle = "#ff8a7a"; g.font = "20px system-ui, sans-serif";
+  if (VR.error) g.fillText(("Error: " + VR.error).slice(0, 56), 30, 950);
+  g.fillStyle = "#9aa6b5"; g.font = "21px system-ui, sans-serif";
+  g.fillText("Trigger: grab the Moon  ·  Grip: move the model", 30, 984);
+  g.fillText("Stick ←→: days  ·  ↑↓: bigger / smaller  ·  press: recenter", 30, 1014);
+  panelTex.needsUpdate = true;
+  VR.panelDirty = false;
+}
+
+// ---- The floating screen: the Moon (or Earth) as seen by the observer ------------------
+const skyRT = new THREE.WebGLRenderTarget(640, 640, { samples: 2 });   // modest size: it's drawn often
+skyRT.texture.colorSpace = THREE.SRGBColorSpace;
+const skyScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.42), new THREE.MeshBasicMaterial({ map: skyRT.texture }));
+skyScreen.position.set(0.66, 1.28, -0.58); skyScreen.rotation.y = -0.75;
+// During a "which phase?" quiz question the screen shows a question mark instead
+const qMarkTex = (() => {
+  const cv = document.createElement("canvas"); cv.width = cv.height = 256;
+  const g = cv.getContext("2d"); g.fillStyle = "#04050a"; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = "#3a4150"; g.font = "800 150px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText("?", 128, 136);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+function updateVrQuizLook() {
+  const asking = quiz.active && !quiz.answered;
+  skyScreen.material.map = asking && quiz.type === "which" ? qMarkTex : skyRT.texture;
+  skyScreen.material.needsUpdate = true;
+  VR.skyFrozen = asking && quiz.type === "where";     // keeps showing the phase being asked about
+  vrPhaseLabels.forEach(sp => (sp.visible = VR.active && !quiz.active));
+  if (!VR.skyFrozen) VR.skyDirty = true;
+  VR.panelDirty = true;
+}
+const screenFrame = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.44), new THREE.MeshBasicMaterial({ color: 0x4a5366 }));
+screenFrame.position.set(0, 0, -0.002); skyScreen.add(screenFrame);
+const capCv = document.createElement("canvas"); capCv.width = 768; capCv.height = 96;
+const capTex = new THREE.CanvasTexture(capCv); capTex.colorSpace = THREE.SRGBColorSpace;
+const caption = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.0525), new THREE.MeshBasicMaterial({ map: capTex, transparent: true }));
+caption.position.set(0, 0.25, 0); skyScreen.add(caption);
+vrRig.add(skyScreen);
+function renderSkyToScreen() {
+  // Render the observer's view with the model at its normal (screen) size and position.
+  const p = world.position.clone(), q = world.quaternion.clone(), sc = world.scale.clone();
+  world.position.set(0, 0, 0); world.quaternion.identity(); world.scale.set(1, 1, 1); world.updateMatrixWorld(true);
+  renderer.xr.enabled = false;
+  skyCam.aspect = 1; skyCam.updateProjectionMatrix();
+  placeSkyDome(skyCam, 1.1);
+  renderer.setRenderTarget(skyRT);
+  renderer.setClearColor(0x04050a); renderer.clear();
+  renderer.render(scene, skyCam);
+  renderer.setRenderTarget(null);
+  renderer.xr.enabled = true;
+  world.position.copy(p); world.quaternion.copy(q); world.scale.copy(sc); world.updateMatrixWorld(true);
+  const g = capCv.getContext("2d");
+  g.clearRect(0, 0, 768, 96);
+  g.fillStyle = "#fff"; g.font = "600 34px system-ui, sans-serif"; g.textAlign = "center";
+  g.fillText(document.getElementById("skyTitle").textContent, 384, 40);
+  g.fillStyle = "#ffd400"; g.font = "26px system-ui, sans-serif";
+  g.fillText(document.getElementById("skyNote").textContent, 384, 82);
+  capTex.needsUpdate = true;
+  VR.skyDirty = false;
+}
+
+// ---- Controllers ------------------------------------------------------------------------
+const rayGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+for (let i = 0; i < 2; i++) {
+  const c = renderer.xr.getController(i);
+  const line = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }));
+  line.scale.z = 2;
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffd400 }));
+  tip.position.z = -2;
+  c.add(line, tip);
+  c.userData = { line, tip, index: i, source: null };
+  c.addEventListener("connected", e => (c.userData.source = e.data));
+  c.addEventListener("disconnected", () => (c.userData.source = null));
+  c.addEventListener("selectstart", () => vrSelectStart(c));
+  c.addEventListener("selectend", () => vrSelectEnd(c));
+  c.addEventListener("squeezestart", () => {
+    VR.squeeze = { c, from: c.getWorldPosition(new THREE.Vector3()), start: world.position.clone() };
+  });
+  c.addEventListener("squeezeend", () => { if (VR.squeeze?.c === c) VR.squeeze = null; });
+  vrGroup.add(c);
+  VR.ctrls.push(c);
+}
+const vrRay = new THREE.Raycaster(), rotM = new THREE.Matrix4();
+vrRay.layers.enableAll();          // the panel is on the orbit-view layer, not the default one
+function aim(c) {
+  rotM.identity().extractRotation(c.matrixWorld);
+  vrRay.ray.origin.setFromMatrixPosition(c.matrixWorld);
+  vrRay.ray.direction.set(0, 0, -1).applyMatrix4(rotM);
+  return vrRay;
+}
+function panelButtonAt(c) {
+  const hit = aim(c).intersectObject(panel, false)[0];
+  if (!hit) return [null, null];
+  const x = hit.uv.x * panelCv.width, y = (1 - hit.uv.y) * panelCv.height;
+  const b = vrButtons.find(b => shown(b) && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+  return [b ? b.id : null, hit.distance];
+}
+function moonHit(c) {
+  // Generous target: anything within ~2.5 Moon radii of the Moon counts as grabbing it
+  const ray = aim(c).ray, centre = moon.getWorldPosition(new THREE.Vector3());
+  const r = S.moonR * world.scale.x * 2.5;
+  return ray.distanceSqToPoint(centre) <= r * r ? ray.origin.distanceTo(centre) : null;
+}
+function vrSelectStart(c) {
+  const [id] = panelButtonAt(c);
+  if (id) { vrPress(id); return; }
+  if (quiz.active && (quiz.type !== "where" || quiz.answered)) return;      // the Moon stays put
+  if (moonHit(c) !== null) { VR.drag = c; VR.wasPlaying = state.playing; setPlaying(false); }
+}
+function vrSelectEnd(c) {
+  if (VR.drag === c) { VR.drag = null; if (VR.wasPlaying) setPlaying(true); quizCheckWhere(); }
+}
+const toLocal = new THREE.Matrix4(), localRay = new THREE.Ray(), hitP = new THREE.Vector3();
+function dragMoon(c) {
+  // Intersect the controller's ray with the plane of the orbit, in the model's own units
+  toLocal.copy(world.matrixWorld).invert();
+  localRay.copy(aim(c).ray).applyMatrix4(toLocal);
+  if (!localRay.intersectPlane(orbitPlane, hitP)) return;
+  hitP.applyQuaternion(orbitQinv);
+  const a = Math.atan2(hitP.y, hitP.x);
+  const d = ((a - Math.PI) / (2 * Math.PI) * SYNODIC % SYNODIC + SYNODIC) % SYNODIC;
+  if (Math.abs(d - state.day) > 1e-4) { setDay(d, true, true); quiz.moved = true; }
+}
+
+// ---- Recenter: put the model, panel and screen in front of you at a comfortable height --
+const headPos = new THREE.Vector3(), headQ = new THREE.Quaternion(), fwd = new THREE.Vector3();
+function recenterVR() {
+  const cam = renderer.xr.getCamera();
+  cam.updateMatrixWorld(true);
+  cam.matrixWorld.decompose(headPos, headQ, fwd);
+  fwd.set(0, 0, -1).applyQuaternion(headQ);
+  const yaw = Math.hypot(fwd.x, fwd.z) > 1e-3 ? Math.atan2(-fwd.x, -fwd.z) : vrRig.rotation.y;
+  vrRig.position.set(headPos.x, headPos.y - DESIGN_EYE, headPos.z);
+  vrRig.rotation.set(0, yaw, 0);
+  vrRig.updateMatrixWorld(true);
+  // the model: its usual spot in front, turned to face you, North up
+  world.position.copy(WORLD_POS).applyMatrix4(vrRig.matrixWorld);
+  world.quaternion.setFromEuler(new THREE.Euler(0, yaw, 0)).multiply(new THREE.Quaternion().setFromAxisAngle(X, -Math.PI / 2));
+  world.updateMatrixWorld(true);
+  VR.recenter = false;
+}
+
+// Quality levels, to trade looks for a steady frame rate on slower headsets (Quest 2)
+const QUALITY = [
+  { name: "High",   milkyWay: true,  stars: 22000, sunDetail: true,  screenMs: 27 },
+  { name: "Medium", milkyWay: false, stars: 11000, sunDetail: true,  screenMs: 80 },
+  { name: "Low",    milkyWay: false, stars: 4000,  sunDetail: false, screenMs: 250 },
+];
+VR.quality = 2;                                   // start on Low in a headset (steadiest on a Quest 2)
+VR.stats = { fps: 0, missed: 0, cpu: 0 };
+VR.error = "";
+function applyQuality(q) {
+  VR.quality = q;
+  const Q = QUALITY[q];
+  if (!VR.active) return;
+  skyDome.userData.mw.visible = Q.milkyWay;
+  skyDome.userData.stars.geometry.setDrawRange(0, Q.stars);
+  sunGroup.userData.ball.material = Q.sunDetail ? sunGroup.userData.detailed : sunGroup.userData.plain;
+  VR.panelDirty = true;
+}
+function restoreQuality() {             // back to full detail on the flat page
+  skyDome.userData.mw.visible = true;
+  skyDome.userData.stars.geometry.setDrawRange(0, Infinity);
+  sunGroup.userData.ball.material = sunGroup.userData.detailed;
+}
+const perf = { frames: 0, missed: 0, cpu: 0, t0: 0, last: 0 };
+function vrFrame(now) {
+  const t0 = performance.now();
+  // frame timing: a gap of more than 1.5 frames means the headset showed an old frame
+  if (perf.last) {
+    const gap = now - perf.last, target = 1000 / (renderer.xr.getSession()?.frameRate || 72);
+    if (gap > target * 1.5) perf.missed += Math.round(gap / target) - 1;
+  }
+  perf.last = now; perf.frames++;
+  if (!perf.t0) perf.t0 = now;
+  if (now - perf.t0 >= 1000) {
+    const secs = (now - perf.t0) / 1000;
+    VR.stats = { fps: perf.frames / secs, missed: Math.round(perf.missed / secs), cpu: perf.cpu / perf.frames };
+    perf.frames = 0; perf.missed = 0; perf.cpu = 0; perf.t0 = now;
+    VR.panelDirty = true;
+  }
+  try { vrFrameInner(now); }
+  catch (e) { VR.error = e.message || String(e); VR.panelDirty = true; console.error(e); }
+  perf.cpu += performance.now() - t0;
+}
+function vrFrameInner(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - (VR.lastNow || now)) / 1000)); VR.lastNow = now;
+  // controllers: hover, rays, dragging, moving the model, thumbsticks
+  const hov = [null, null];
+  for (const c of VR.ctrls) {
+    const [id, dist] = panelButtonAt(c), mh = id ? null : moonHit(c);
+    hov[c.userData.index] = id;
+    const len = dist ?? mh ?? 2;
+    c.userData.line.scale.z = len; c.userData.tip.position.z = -len;
+    c.userData.tip.material.color.set(id || mh !== null || VR.drag === c ? 0xffd400 : 0xffffff);
+    const gp = c.userData.source?.gamepad;
+    // thumbstick press: recenter (on the press, not while held)
+    const stickDown = !!gp?.buttons[3]?.pressed;
+    if (stickDown && !c.userData.stickDown) VR.recenter = true;
+    c.userData.stickDown = stickDown;
+    if (gp && gp.axes.length >= 4 && !quiz.active) {
+      const ax = gp.axes[2], ay = gp.axes[3];
+      if (Math.abs(ax) > 0.25) { setPlaying(false); setDay(state.day + ax * dt * 6); }
+      if (Math.abs(ay) > 0.25) world.scale.setScalar(Math.min(0.2, Math.max(0.02, world.scale.x * (1 - ay * dt * 0.9))));
+    }
+  }
+  if (hov[0] !== VR.hover[0] || hov[1] !== VR.hover[1]) { VR.hover = hov; VR.panelDirty = true; }
+  if (VR.recenter) recenterVR();
+  if (VR.drag) dragMoon(VR.drag);
+  if (VR.squeeze) {
+    const now3 = VR.squeeze.c.getWorldPosition(new THREE.Vector3());
+    world.position.copy(VR.squeeze.start).add(now3.sub(VR.squeeze.from));
+  }
+  if (VR.squeeze || VR.drag) world.updateMatrixWorld(true);
+  if (VR.panelDirty) drawPanel();
+  // The floating screen is a second full render: at most ~36 times a second
+  if (VR.skyDirty && !VR.skyFrozen && now - (VR.lastSky || 0) > QUALITY[VR.quality].screenMs) { VR.lastSky = now; renderSkyToScreen(); }
+  // stars around the headset
+  const xrCam = renderer.xr.getCamera();
+  skyDome.position.setFromMatrixPosition(xrCam.matrixWorld);
+  skyDome.scale.setScalar(40);
+  skyDome.userData.stars.material.uniforms.gain.value = 1.45;
+  faceSunGlow(xrCam);
+  renderer.setClearColor(0x04050a);
+  renderer.render(scene, orbitCam);
+}
+
+renderer.xr.addEventListener("sessionstart", () => {
+  VR.active = true;
+  if (state.real) { scaleBox.checked = false; state.real = false; buildScale(false); zoomBtn.disabled = true; }
+  stopFollow(); zoomAnim = null;
+  world.scale.setScalar(WORLD_SCALE);
+  world.rotation.set(-Math.PI / 2, 0, 0);       // the model's north (z) becomes VR's up (y)
+  world.position.copy(WORLD_POS);
+  world.updateMatrixWorld(true);
+  renderer.setScissorTest(false);
+  lineMaterials.forEach(m => m.resolution.set(1832, 1920));
+  vrGroup.visible = true;
+  if (vrLabels) vrLabels.visible = true;
+  setLayers(vrGroup, ORBIT);
+  VR.skyDirty = VR.panelDirty = true;
+  // Fit the layout to the wearer (seated or standing) as soon as the headset's position is
+  // known, and again whenever the headset's own "recenter" is used
+  VR.recenter = true;
+  const space = renderer.xr.getReferenceSpace();
+  space?.addEventListener?.("reset", () => (VR.recenter = true));
+  updateVrQuizLook();
+  if (quiz.active && quiz.type === "where" && !quiz.answered) quizSnapshot();
+  applyQuality(VR.quality);
+  perf.last = 0; perf.t0 = 0; VR.error = "";
+  refresh();
+  // Prepare every shader and texture now, so nothing has to be compiled or uploaded the
+  // first time it comes into view (that causes a visible hitch in a headset).
+  drawPanel();
+  [earthMat.map, moon.material.map, panelTex, capTex, skyRT.texture].forEach(t => t && renderer.initTexture(t));
+  renderer.compile(scene, orbitCam);
+  renderer.compile(scene, skyCam);
+  const ball = sunGroup.userData.ball, used = ball.material;          // also prepare the other Sun look
+  ball.material = used === sunGroup.userData.plain ? sunGroup.userData.detailed : sunGroup.userData.plain;
+  renderer.compile(scene, orbitCam);
+  ball.material = used;
+});
+renderer.xr.addEventListener("sessionend", () => {
+  VR.active = false; VR.drag = VR.squeeze = null;
+  if (quiz.active) showQuiz();
+  restoreQuality();
+  world.position.set(0, 0, 0); world.rotation.set(0, 0, 0); world.scale.set(1, 1, 1); world.updateMatrixWorld(true);
+  vrGroup.visible = false;
+  if (vrLabels) vrLabels.visible = false;
+  updateVrQuizLook();
+  if (quiz.active && quiz.type === "where" && !quiz.answered) quizSnapshot();
+  renderer.setScissorTest(true);
+  lastLayout = ""; dirty = true;
+  refresh();
+});
+
+// ---- The "Enter VR" button: only shown where VR is available ------------------------------
+const vrBtn = document.getElementById("vrBtn"), vrNote = document.getElementById("vrNote");
+async function setupVR() {
+  let ok = false;
+  try { ok = !!navigator.xr && await navigator.xr.isSessionSupported("immersive-vr"); } catch (e) { ok = false; }
+  vrBtn.hidden = !ok;
+  if (ok) { vrNote.textContent = ""; return; }
+  if (TARGET === "claude") {
+    // claude.ai shows the page in a sandboxed frame, where browsers don't allow VR
+    vrNote.innerHTML = `VR: open <a href="${SITE_URL}" target="_blank" rel="noopener" style="color:inherit">${SITE_URL.replace("https://", "")}</a> in a headset browser (e.g. Meta Quest Browser).`;
+  } else {
+    vrNote.textContent = window.isSecureContext
+      ? "VR: open this page in a headset browser (e.g. Meta Quest Browser) and an Enter VR button appears at the top right of the 3D view."
+      : "VR needs the page to be served over https://.";
+  }
+}
+vrBtn.onclick = async () => {
+  try {
+    const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local-floor", "bounded-floor"] });
+    await renderer.xr.setSession(session);
+  } catch (e) { vrNote.textContent = "Couldn't start VR: " + e.message; }
+};
+setupVR();
+document.querySelector(".credits").append(document.createElement("br"), BUILD);
+// Offline support and "install as an app" (website copy only)
+if (TARGET === "site" && "serviceWorker" in navigator && location.protocol.startsWith("http"))
+  navigator.serviceWorker.register("sw.js").catch(e => console.warn("Offline support unavailable:", e));
+
+buildScale(false);
+setDay(0);
+renderer.setAnimationLoop(loop);    // (not requestAnimationFrame: VR frames must come from the headset)
+window.__moonsim = { quiz, quizStart, quizEnd, quizNext, quizAnswerWhich, tiltBox, orbitQ, controls, orbitCam, drawIcon, recenterVR, vrRig, eclipseInfo, PHASES, setDay, state, scaleBox, toggleZoom, frameOrbit, setPlaying, renderer, skyEl, canvas, THREE, skyCam, renderAll, focusOn, pickBody, orbitEl, moon, world, VR, panel, vrButtons, panelCv };   // handy for testing
+</script>
+</body>
+</html>

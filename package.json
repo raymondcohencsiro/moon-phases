@@ -1,0 +1,6 @@
+{
+  "name": "moon-phases",
+  "private": true,
+  "description": "Build dependencies for the Moon phases simulator (build.py copies three.js into vendor/)",
+  "devDependencies": { "three": "0.170.0" }
+}
